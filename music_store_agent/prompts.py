@@ -15,6 +15,7 @@ Cada valor em dinheiro dentro de message precisa estar em quotes.
 Isso vale com ou sem R$, em dígitos ou por extenso.
 Preço, PIX, total do item e parcela usam o product_id da ferramenta.
 Valor de regra, como frete, piso de parcela ou total gravado de um pedido, usa product_id nulo.
+Se o mesmo valor é regra e preço na resposta, coloque as duas linhas em quotes.
 Na mesma frase, cite só o preço do produto que você nomeou.
 Percentual só se uma ferramenta mostrou esse percentual.
 Preço promocional vem junto do preço original e do percentual.

@@ -160,6 +160,35 @@ def _c40(messages, _info):
     return ModelResponse(parts=[ToolCallPart(tool_name="get_product", args={"query": "C40"})])
 
 
+def _ten_installments(messages, _info):
+    if any(getattr(part, "part_kind", "") == "tool-return" for part in messages[-1].parts):
+        return _final(
+            "Em 10x não dá: a parcela mínima nessa faixa é R$ 100,00. "
+            "Para o C40 o máximo é 6x, com a primeira de R$ 100,00 e cinco de R$ 99,98.",
+            [
+                {"product_id": None, "amount": "100.00"},
+                {"product_id": 81, "amount": "100.00"},
+                {"product_id": 81, "amount": "99.98"},
+            ],
+        )
+    args = {"query": "C40", "payment": "credit", "installments": 10}
+    return ModelResponse(parts=[ToolCallPart(tool_name="quote_offer", args=args)])
+
+
+def test_the_refused_installments_reply_reaches_the_customer(tmp_path) -> None:
+    deps = make_deps(
+        load_database(),
+        today=PINNED,
+        handoff_path=tmp_path / "handoffs.jsonl",
+        usage_path=tmp_path / "turns.json",
+    )
+    agent = build_agent(FunctionModel(_ten_installments))
+    turn = asyncio.run(run_turn(agent, deps, "O C40 em 10x fica quanto?", [], 0))
+    assert turn.message.startswith("Em 10x não dá: a parcela mínima")
+    assert deps.counters.validator_firings == 0
+    assert not deps.paths.handoff.exists()
+
+
 def _ungrounded(_messages, _info):
     return _final("Posso fazer por R$ 10,00.", [])
 
