@@ -177,3 +177,4 @@ def test_free_text_destination_is_rejected_by_the_tool_schema(tmp_path) -> None:
     assert result.output.message == "Qual cidade?"
     assert "campo_grande" in _tool_text(result.all_messages())
     assert deps.ledger.by_product == {}
+

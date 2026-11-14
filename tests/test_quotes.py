@@ -9,7 +9,7 @@ from music_store_agent.db import load_database
 from music_store_agent.hours import hours_answer
 from music_store_agent.ledger import Ledger
 from music_store_agent.money import split_parcels
-from music_store_agent.orders import Identity, load_orders, verify
+from music_store_agent.orders import Identity, verify
 from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import format_brl
 
@@ -57,7 +57,7 @@ def test_holiday_hours_name_the_next_opening() -> None:
 
 def test_incomplete_contact_does_not_count() -> None:
     identity = Identity()
-    text = verify(identity, load_orders(load_database()), 4, None, None)
+    text = verify(identity, load_database(), 4, None, None)
     assert "completo" in text
     assert identity.failed_verifications == 0
 
