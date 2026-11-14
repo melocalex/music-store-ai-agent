@@ -59,9 +59,10 @@ CATALOG_FETCH_LIMIT = 500
 ORDER_ITEMS_LIMIT = 50
 EMPTY_CATEGORY_IDS = (6, 7, 8)
 SESSION_TURN_CAP = 30
+MAX_INPUT_CHARS = 600
 DAILY_TURN_CAP = 80
 HANDOFF_SUMMARY_CAP = 400
-OUTPUT_RETRIES = 1
+OUTPUT_RETRIES = 2
 TOOL_RETRIES = 1
 PINNED_DAY_OFFSET = 1
 HOLIDAY_LOOKAHEAD_DAYS = 21
@@ -137,7 +138,22 @@ SAFE_PRICE_MESSAGE = (
     "Não consegui confirmar um valor com segurança. "
     "Vou chamar alguém da equipe para seguir com você."
 )
-RATE_LIMIT_MESSAGE = "Estou recebendo muitas perguntas agora. Espere um minuto e tente de novo."
+RATE_LIMIT_MESSAGE = (
+    "O serviço que gera as respostas atingiu o limite de uso agora. "
+    f"Tente de novo mais tarde ou fale no WhatsApp {WHATSAPP_PHONE}."
+)
+QUOTA_DAY_MESSAGE = (
+    "O serviço que gera as respostas atingiu a cota de hoje. "
+    f"Volte amanhã ou fale no WhatsApp {WHATSAPP_PHONE}."
+)
+PROVIDER_ERROR_MESSAGE = (
+    "O serviço que gera as respostas falhou agora. "
+    f"Tente de novo em instantes ou fale no WhatsApp {WHATSAPP_PHONE}."
+)
+TURN_ERROR_MESSAGE = "Não consegui montar essa resposta. Pode reformular a pergunta?"
+INPUT_TOO_LONG_MESSAGE = (
+    f"A mensagem passou de {MAX_INPUT_CHARS} caracteres. Pode resumir em uma pergunta?"
+)
 SESSION_CAP_MESSAGE = "Cheguei ao limite de mensagens desta conversa. Abra uma conversa nova."
 DAILY_CAP_MESSAGE = (
     "O limite de atendimento de hoje foi atingido. "

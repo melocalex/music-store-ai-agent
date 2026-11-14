@@ -1,4 +1,4 @@
-"""Terminal chat. The phone flag is the WhatsApp sender, not a model argument."""
+"""Terminal chat. The phone flag is the WhatsApp sender, an extra way to confirm an order."""
 
 import argparse
 import asyncio
@@ -13,6 +13,7 @@ from music_store_agent.constants import ASSISTANT_NAME, STORE_NAME
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.run import run_turn
+from music_store_agent.textutil import mask_pii
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
@@ -23,7 +24,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=f"{ASSISTANT_NAME}, assistente do {STORE_NAME}")
+    parser = argparse.ArgumentParser(description=f"{ASSISTANT_NAME}, assistente da {STORE_NAME}")
     parser.add_argument("--phone", default=None, help="Telefone de quem escreveu no WhatsApp")
     parser.add_argument("--today", default=None, help="Data AAAA-MM-DD no lugar do relógio fixo")
     parser.add_argument("--real-clock", action="store_true", help="Usa o relógio real")
@@ -65,7 +66,7 @@ async def _print_turn(
     turns: int,
 ) -> list[ModelMessage]:
     turn = await run_turn(agent, deps, text, history, turns)
-    print(f"{ASSISTANT_NAME}: {turn.message}")
+    print(f"{ASSISTANT_NAME}: {mask_pii(turn.message)}")
     for quote in turn.quotes:
         label = "regra" if quote.product_id is None else f"produto {quote.product_id}"
         print(f"Fonte: {label} {quote.amount}")
@@ -77,7 +78,7 @@ def _stub_model() -> TestModel:
         call_tools=[],
         custom_output_args={
             "message": (
-                f"Olá, sou a {ASSISTANT_NAME}, assistente virtual do {STORE_NAME}. "
+                f"Olá, sou a {ASSISTANT_NAME}, assistente virtual da {STORE_NAME}. "
                 "Como posso ajudar?"
             ),
             "quotes": [],
