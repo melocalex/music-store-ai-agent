@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 230" role="img" aria-labelledby="journey-title journey-desc">
+  <title id="journey-title">A customer conversation in six steps</title>
+  <desc id="journey-desc">Ask, find, price, confirm the order, follow up, and hand off, each with the tool that answers it.</desc>
+  <rect width="1200" height="230" rx="24" fill="#F7F4EF" stroke="#D3E0D8" stroke-width="2"/>
+  <line x1="110" y1="100" x2="1090" y2="100" stroke="#C3D5CA" stroke-width="5" stroke-linecap="round"/>
+  <g fill="#1F4B3A" stroke="#F7F4EF" stroke-width="5">
+    <circle cx="110" cy="100" r="40"/>
+    <circle cx="306" cy="100" r="40"/>
+    <circle cx="502" cy="100" r="40"/>
+    <circle cx="698" cy="100" r="40"/>
+    <circle cx="894" cy="100" r="40"/>
+    <circle cx="1090" cy="100" r="40"/>
+  </g>
+  <g fill="none" stroke="#F7F4EF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M90 86h40a5 5 0 0 1 5 5v16a5 5 0 0 1-5 5h-24l-10 9v-9h-6a5 5 0 0 1-5-5v-16a5 5 0 0 1 5-5z"/>
+    <circle cx="300" cy="94" r="13"/>
+    <path d="M309 103l13 13"/>
+    <path d="M484 88h17l17 17-15 15-19-19z"/>
+    <circle cx="493" cy="97" r="2.5"/>
+    <path d="M698 80l18 7v12c0 11-8 19-18 23-10-4-18-12-18-23V87z"/>
+    <path d="M690 101l6 6 11-12"/>
+    <path d="M874 92h28v20h-28z"/>
+    <path d="M902 98h9l6 7v7h-15"/>
+    <circle cx="882" cy="116" r="4"/>
+    <circle cx="908" cy="116" r="4"/>
+    <circle cx="1082" cy="88" r="8"/>
+    <path d="M1068 116c2-10 8-14 14-14s12 4 14 14"/>
+    <path d="M1098 96h12m-5-5 5 5-5 5"/>
+  </g>
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g font-size="21" font-weight="700" fill="#1F4B3A">
+      <text x="110" y="172">Ask</text>
+      <text x="306" y="172">Find</text>
+      <text x="502" y="172">Price</text>
+      <text x="698" y="172">Confirm</text>
+      <text x="894" y="172">Follow up</text>
+      <text x="1090" y="172">Hand off</text>
+    </g>
+    <g font-size="15" fill="#4B6658" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace">
+      <text x="110" y="198">any language</text>
+      <text x="306" y="198">search_catalog</text>
+      <text x="502" y="198">quote_offer</text>
+      <text x="698" y="198">verify_customer</text>
+      <text x="894" y="198">get_order</text>
+      <text x="1090" y="198">handoff_to_human</text>
+    </g>
+  </g>
+</svg>
