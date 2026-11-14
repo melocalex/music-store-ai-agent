@@ -17,7 +17,7 @@ A live run needs the key described in [setup.md](setup.md).
 |---|---|
 | `--stub` | scripted model turns, no provider call |
 | `--runs N` | passes over the file. Default 3. Several passes expose flaky cases |
-| `--model ID` | a `google:` model id. Default: `MODEL`, then `google:gemini-3.8-flash` |
+| `--model ID` | the primary, a `google:` model id. Default: `MODEL`, then `google:gemini-3.8-flash`. The fallback comes from `MODEL_FALLBACK` |
 | `--from ID` | start at this case, after a stopped run |
 
 | Exit code | Meaning |
@@ -31,7 +31,7 @@ A live run needs the key described in [setup.md](setup.md).
 
 **Stub.** Each turn's `stub` block lists the tool calls and the reply a model would give. The runner sends them through the real tools, the real ledger, and the real price check, quoting amounts the way the prompt asks. The scorer then checks the `expect` block, which the stub never reads. A stub pass shows that the tools return the right facts and that the guard accepts a grounded reply. Tests in `tests/test_evals.py` show the other side: a stub reply with another product's price falls back and fails, and a wrong tool argument fails. The stub is not a model score.
 
-**Live.** The same prompts go to Gemini, and the same `expect` checks score the replies. Keywords are folded for case and accents, arguments are compared by meaning (`"1000"` matches `"1.000,00"`, `"C40"` matches `"Yamaha C40"`, `"13/06"` matches `"2026-06-13"`), and amounts are parsed, so a reply can use its own words.
+**Live.** The same prompts go to Gemini, and the same `expect` checks score the replies. A live run uses the same fallback and per-request timeout as the app, but not the 45-second turn budget, so a slow turn is measured rather than cut. A warning on stderr names every response the fallback gave, so a score can be checked against the model named in the report file. Keywords are folded for case and accents, arguments are compared by meaning (`"1000"` matches `"1.000,00"`, `"C40"` matches `"Yamaha C40"`, `"13/06"` matches `"2026-06-13"`), and amounts are parsed, so a reply can use its own words.
 
 ## Scenario format
 

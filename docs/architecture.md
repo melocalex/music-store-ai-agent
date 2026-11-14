@@ -1,6 +1,6 @@
 # Architecture
 
-One Pydantic AI agent on Gemini, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
+One Pydantic AI agent on Gemini with a fallback model, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
 
 ## Turn flow
 
@@ -10,14 +10,14 @@ sequenceDiagram
   actor C as Customer
   participant P as Page or CLI
   participant R as run_turn
-  participant A as Agent (Gemini)
+  participant A as Agent (primary, then fallback)
   participant T as Tools
   participant L as Ledger
   participant G as Price check
   C->>P: question
   P->>R: message, history, turn count
   R->>R: session cap, input size, daily cap
-  R->>A: run
+  R->>A: run, within 45 seconds
   loop until a final reply
     A->>T: tool call with typed arguments
     T->>L: amounts, percents, and product names it printed
@@ -34,7 +34,24 @@ sequenceDiagram
   P-->>C: masked text
 ```
 
-`run_turn` in `music_store_agent/run.py` owns the failures. A provider error becomes a fixed message. A turn in which the price check fired and the model never recovered becomes the safe price message and a `price_check` handoff. Any other agent failure becomes a short "please rephrase" message with no handoff.
+`run_turn` in `music_store_agent/run.py` owns the failures. A provider error the fallback did not absorb, both models failing, or a turn past 45 seconds becomes a fixed message. A turn in which the price check fired and the model never recovered becomes the safe price message and a `price_check` handoff. Any other agent failure becomes a short "please rephrase" message with no handoff.
+
+## Models
+
+`build_agent` in `agent.py` runs the live agent on a Pydantic AI `FallbackModel`:
+
+| Role | Variable | Default |
+|---|---|---|
+| Primary | `MODEL` | `google:gemini-3.8-flash` |
+| Fallback | `MODEL_FALLBACK` | `google:gemini-3.6-flash` |
+
+Each model request goes to the primary under `request_timeout`, 20 seconds by default (`MODEL_TIMEOUT_SECONDS`), with provider SDK retries set to 0. An outage sends that same request to the fallback with a fresh timeout: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`. Any other error, such as a rate limit or a rejected request, is raised from the primary. When both models fail, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` answers with the provider message.
+
+`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`). Two 20-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
+
+The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning with the primary's error type for the fallback. The log holds model ids and error types only.
+
+A `Model` instance passed to `build_agent`, as the stub runs and the offline suite do, runs as given, without the fallback or the timeout.
 
 ## Tools
 
@@ -59,8 +76,8 @@ Pydantic turns the `Literal` arguments into enums in the tool schema, so a value
 
 | Module | Holds |
 |---|---|
-| `agent.py` | the agent, the tool wrappers, the model id check, and the output validator |
-| `run.py` | one turn: caps, the run, and the failure messages |
+| `agent.py` | the agent, the model chain, the model id and timeout checks, the tool wrappers, and the output validator |
+| `run.py` | one turn: caps, the turn deadline, the run, the failure messages, and the answering-model log |
 | `catalog.py` | product states, search, code matching, product text, promotions |
 | `quotes.py`, `money.py` | the offer text and the `Decimal` rules for PIX, installments, freight, and quantity |
 | `guard.py`, `ledger.py` | the price check and the record of what tools returned |

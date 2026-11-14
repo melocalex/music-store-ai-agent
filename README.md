@@ -21,7 +21,7 @@
 |:-:|---|---|
 | **1** | git | the code, the store CSVs, and the policy PDF |
 | **2** | Python 3.12 | the app, the CLI, and the test tools |
-| **3** | nothing else | lint, 104 tests, and 28 scenarios through the real tools, all offline |
+| **3** | nothing else | lint, 117 tests, and 28 scenarios through the real tools, all offline |
 
 ```bash
 # 1. Clone
@@ -157,6 +157,7 @@ music-store-ai-agent/
 | A percent written in words, as in "cinco por cento" | The percent check reads digits only |
 | Carnival, Good Friday, or Corpus Christi | Moving holidays are not in the list. Aria says so and hands off |
 | Freight to another city | Not calculated. The team quotes it |
+| Gemini 3.8 Flash is down or takes more than 20 seconds | The request moves to Gemini 3.6 Flash. If both fail, or the turn passes 45 seconds, a short message asks to try again |
 | The provider quota runs out | A short message names the limit. The daily cap is 80 turns |
 | A live eval score | None is committed yet |
 
@@ -181,7 +182,7 @@ Built with Cursor and Claude Code as development tools.
 
 | Page | Covers |
 |---|---|
-| [Setup](docs/setup.md) | local install, model key and model id, the CLI and the page, hosting, caps and rate limits |
+| [Setup](docs/setup.md) | local install, model key, primary and fallback models, timeouts, the CLI and the page, hosting, caps and rate limits |
 | [Architecture](docs/architecture.md) | the ten tools, the turn flow, the ledger, the clock, and the modules |
 | [Guardrails](docs/guardrails.md) | every rule, its source, and the conflicts in the manual |
 | [Data quality](docs/data-quality.md) | the report generated from the CSVs |
