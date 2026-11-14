@@ -5,6 +5,7 @@ the machine and the provider's own 503 and 429 bodies are mapped the way a live 
 """
 
 import asyncio
+import logging
 import time
 from datetime import date
 
@@ -95,6 +96,27 @@ def test_a_gemini_503_moves_the_turn_to_the_fallback(tmp_path) -> None:
     assert turn.message == "Olá."
     assert not turn.limited
     assert calls == [PRIMARY, FALLBACK]
+
+
+def test_the_log_names_the_model_that_answered_without_the_body_or_key(tmp_path, caplog) -> None:
+    calls: list[str] = []
+    down = model_chain(_gemini(PRIMARY, 503, UNAVAILABLE, calls), _answering(FALLBACK, calls))
+    up = model_chain(_answering(PRIMARY, calls), _answering(FALLBACK, calls))
+    with caplog.at_level(logging.INFO, logger=run.__name__):
+        _turn(tmp_path / "down", down)
+        _turn(tmp_path / "up", up)
+    lines = [(r.levelno, r.getMessage()) for r in caplog.records if r.name == run.__name__]
+    assert lines == [
+        (
+            logging.WARNING,
+            f"fallback model function:{FALLBACK} answered after {PRIMARY} failed"
+            " with ModelUnavailableError",
+        ),
+        (logging.INFO, f"primary model function:{PRIMARY} answered"),
+    ]
+    logged = caplog.text
+    assert "placeholder-not-a-key" not in logged
+    assert "currently unavailable" not in logged
 
 
 def test_both_models_down_keeps_the_provider_message(tmp_path) -> None:

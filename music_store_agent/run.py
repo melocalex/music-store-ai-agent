@@ -1,5 +1,7 @@
 """One customer turn: caps, the model, then a fixed message for each kind of failure."""
 
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
@@ -10,7 +12,8 @@ from pydantic_ai.exceptions import (
     RunTimedOut,
     UnexpectedModelBehavior,
 )
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models.fallback import FallbackModel
 
 from music_store_agent.clock import real_clock
 from music_store_agent.constants import (
@@ -34,6 +37,7 @@ from music_store_agent.usage import reserve
 
 _HTTP_TOO_MANY = 429
 _DAILY_QUOTA_HINTS = ("perday", "per day", "per_day", "daily")
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,7 +79,34 @@ async def run_turn(
         return Turn(TURN_ERROR_MESSAGE, (), tuple(history), limited=True)
     reply = result.output
     fresh = tuple(result.new_messages())
+    log_answering_model(agent, fresh)
     return Turn(reply.message, tuple(reply.quotes), tuple(result.all_messages()), False, fresh)
+
+
+def log_answering_model(agent: Agent[Deps, AgentReply], messages: Sequence[ModelMessage]) -> None:
+    """Name the model behind each response of the turn. A fallback answer is a warning.
+
+    Only model ids and error types are logged: an error message can carry the provider's body.
+    """
+    chain = agent.model
+    if not isinstance(chain, FallbackModel):
+        return
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            continue
+        failed = message.failed_attempts or []
+        answered = chain.models[min(len(failed), len(chain.models) - 1)].model_id
+        if not failed:
+            _log.info("primary model %s answered", answered)
+            continue
+        causes = ", ".join(
+            f"{attempt.model_name} failed with {_error_type(attempt.error)}" for attempt in failed
+        )
+        _log.warning("fallback model %s answered after %s", answered, causes)
+
+
+def _error_type(error: str | None) -> str:
+    return (error or "rejected").split(":", 1)[0]
 
 
 def provider_message(error: ModelAPIError) -> str:
