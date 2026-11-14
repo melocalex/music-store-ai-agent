@@ -11,6 +11,7 @@ Every value below is a named constant in `music_store_agent/constants.py`, and a
 | Product values use the product id | price, PIX, line total, and installment |
 | Rule values use a null id | freight, a floor, a threshold, a stored order total, each tagged with its kind. The customer's budget, echoed by the search, is kept apart and is never a store value |
 | A price stays with its product | a sentence that names catalog products may only carry prices quoted for one of them |
+| A price follows its own model | when a singular price verb (`custa`, `sai`, `fica`, `vale`, `por`) links an amount to the model right before it, the amount must be that model's. "O C40 custa R$ 849,00 e o C70 custa R$ 599,90" is refused; "custam R$ 599,90 e R$ 849,00, respectivamente" is not checked this way |
 | A rule value keeps its kind | in a sentence that names a product, a null-id amount needs a word of its kind: `frete` for freight, `mínima` for a floor, `acima` for a threshold, `total` or `pedido` for an order total, `até` or `teto` for the budget. "O Shelby SU-21S custa R$ 35,00" is refused; "o frete do SU-21S é R$ 35,00" passes |
 | Percents come from tools | a percent in the reply must appear in tool text |
 | Failure | two retries, then a short message with no amount and a `price_check` handoff |

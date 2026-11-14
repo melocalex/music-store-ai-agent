@@ -118,6 +118,23 @@ def test_amount_must_sit_next_to_its_own_product() -> None:
     assert grounding_gap("Esse modelo custa R$ 849,00.", other, ledger).ok
 
 
+def test_two_prices_swapped_between_two_named_models_are_refused() -> None:
+    ledger = _ledger()
+    both = [PriceQuote(product_id=81, amount=C40), PriceQuote(product_id=82, amount=C70)]
+    for swapped in (
+        "O C40 custa R$ 849,00 e o C70 custa R$ 599,90.",
+        "O C70 sai por R$ 599,90 e o C40 sai por R$ 849,00.",
+    ):
+        assert not grounding_gap(swapped, both, ledger).ok, swapped
+    for honest in (
+        "O C40 custa R$ 599,90 e o C70 custa R$ 849,00.",
+        "O C40 sai por R$ 599,90, enquanto o C70 sai por R$ 849,00.",
+        "O C40 e o C70 custam R$ 599,90 e R$ 849,00, respectivamente.",
+        "Comparando o C40 com o C70: R$ 599,90 contra R$ 849,00.",
+    ):
+        assert grounding_gap(honest, both, ledger).ok, honest
+
+
 def test_policy_values_use_a_null_id_and_prices_use_the_product() -> None:
     ledger = _ledger()
     ledger.add_policy(FREIGHT_FLAT, FREIGHT)
