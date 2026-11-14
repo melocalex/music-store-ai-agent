@@ -52,8 +52,11 @@ def test_parcels_add_up_to_the_price() -> None:
 
 
 def test_floors_use_the_exact_parcel_not_the_rounded_one() -> None:
-    for count, floor in ((TIER_LOW_MAX, MIN_PARCEL_2_TO_3), (TIER_MID_MAX, MIN_PARCEL_4_TO_6),
-                         (INSTALLMENT_MAX, MIN_PARCEL_7_TO_12)):
+    for count, floor in (
+        (TIER_LOW_MAX, MIN_PARCEL_2_TO_3),
+        (TIER_MID_MAX, MIN_PARCEL_4_TO_6),
+        (INSTALLMENT_MAX, MIN_PARCEL_7_TO_12),
+    ):
         exact = floor * count
         assert decide_installments(exact, count).allowed, count
         assert not decide_installments(exact - CENT, count).allowed, count

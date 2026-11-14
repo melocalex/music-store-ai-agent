@@ -94,14 +94,17 @@ def _load(conn: sqlite3.Connection, path: Path, table: str, mapper) -> None:
         return
     columns = ", ".join(rows[0].keys())
     marks = ", ".join("?" for _ in rows[0])
-    conn.executemany(f"INSERT INTO {table} ({columns}) VALUES ({marks})",
-        [tuple(r.values()) for r in rows])
+    conn.executemany(
+        f"INSERT INTO {table} ({columns}) VALUES ({marks})", [tuple(r.values()) for r in rows]
+    )
 
 
 def _category(row: dict[str, str]) -> dict[str, object]:
-    return {"category_id": int(row["category_id"]),
+    return {
+        "category_id": int(row["category_id"]),
         "name": row["name"],
-        "description": row["description"]}
+        "description": row["description"],
+    }
 
 
 def _product(row: dict[str, str]) -> dict[str, object]:
@@ -143,9 +146,11 @@ def _order(row: dict[str, str]) -> dict[str, object]:
 
 
 def _item(row: dict[str, str]) -> dict[str, object]:
-    return {"order_id": int(row["order_id"]),
+    return {
+        "order_id": int(row["order_id"]),
         "quantity": int(row["quantity"]),
-        "product_id": int(row["product_id"])}
+        "product_id": int(row["product_id"]),
+    }
 
 
 def _promo(row: dict[str, str]) -> dict[str, object]:

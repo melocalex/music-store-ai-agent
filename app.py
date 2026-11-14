@@ -131,14 +131,12 @@ def _ask(prompt: str) -> None:
     st.session_state.turns += 1
     quotes = [f"valor {quote.product_id} {quote.amount}" for quote in turn.quotes]
     st.session_state.chat.append({"role": "user", "text": prompt})
-    st.session_state.chat.append(
-        {
-            "role": "assistant",
-            "text": turn.message,
-            "tools": tool_lines(list(turn.new_messages)),
-            "quotes": quotes,
-        }
-    )
+    st.session_state.chat.append({
+        "role": "assistant",
+        "text": turn.message,
+        "tools": tool_lines(list(turn.new_messages)),
+        "quotes": quotes,
+    })
     st.rerun()
 
 

@@ -174,8 +174,14 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
     failures = score_case(case, transcript)
     counters = deps.counters
     return CaseRun(
-        case["id"], not failures, failures, latency, requests,
-        counters.validator_firings, counters.validator_catches, len(case["turns"]),
+        case["id"],
+        not failures,
+        failures,
+        latency,
+        requests,
+        counters.validator_firings,
+        counters.validator_catches,
+        len(case["turns"]),
     )
 
 

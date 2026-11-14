@@ -170,11 +170,10 @@ def is_sellable(product: Product) -> bool:
 
 def load_catalog(conn: sqlite3.Connection) -> tuple[Product, ...]:
     promos = _promo_map(fetch_promotions(conn))
-    products = [_product_from(row,
-        promos.get(row["product_id"],
-        PromoSet(None,
-        None,
-        ()))) for row in fetch_products(conn)]
+    products = [
+        _product_from(row, promos.get(row["product_id"], PromoSet(None, None, ())))
+        for row in fetch_products(conn)
+    ]
     return tuple(products)
 
 
@@ -203,10 +202,9 @@ def _promo_label(row: sqlite3.Row) -> str:
 
 def _product_from(row: sqlite3.Row, promos: PromoSet) -> Product:
     specs = _specs(str(row["specs"]))
-    details = Details(str(row["status"]),
-        int(row["stock_quantity"]),
-        str(row["description"]),
-        specs)
+    details = Details(
+        str(row["status"]), int(row["stock_quantity"]), str(row["description"]), specs
+    )
     return Product(
         int(row["product_id"]),
         str(row["name"]),
@@ -445,8 +443,9 @@ def similar_products(products: tuple[Product, ...], product: Product) -> list[Pr
         and other.category == product.category
         and is_sellable(other)
     ]
-    pool.sort(key=lambda other: (abs(effective_price(other) - product.list_price),
-        fold(other.name)))
+    pool.sort(
+        key=lambda other: (abs(effective_price(other) - product.list_price), fold(other.name))
+    )
     return pool[:SIMILAR_CAP]
 
 
