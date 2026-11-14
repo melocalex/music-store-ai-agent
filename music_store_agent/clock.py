@@ -5,11 +5,17 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from music_store_agent.constants import (
+    CARNIVAL,
+    CARNIVAL_FROM_EASTER,
     CLOCK_FIXED,
     CLOCK_LABELS,
     CLOCK_PINNED,
     CLOCK_REAL,
+    CORPUS_CHRISTI,
+    CORPUS_CHRISTI_FROM_EASTER,
     FIXED_HOLIDAYS,
+    GOOD_FRIDAY,
+    GOOD_FRIDAY_FROM_EASTER,
     HOLIDAY_LOOKAHEAD_DAYS,
     PINNED_DAY_OFFSET,
     REFERENCE_TIME,
@@ -80,10 +86,47 @@ def weekday_name(day: date) -> str:
 
 
 def holiday_name(day: date) -> str | None:
+    """A day the store closes: a fixed holiday or Good Friday."""
     for month, dom, name, _scope in FIXED_HOLIDAYS:
         if day.month == month and day.day == dom:
             return name
+    if (day - easter(day.year)).days == GOOD_FRIDAY_FROM_EASTER:
+        return GOOD_FRIDAY
     return None
+
+
+def unset_hours_holiday(day: date) -> str | None:
+    """Carnival and Corpus Christi: holidays for some, with no store hours set for them."""
+    from_easter = (day - easter(day.year)).days
+    if from_easter in CARNIVAL_FROM_EASTER:
+        return CARNIVAL
+    if from_easter == CORPUS_CHRISTI_FROM_EASTER:
+        return CORPUS_CHRISTI
+    return None
+
+
+def moving_dates(year: int) -> dict[str, tuple[date, ...]]:
+    sunday = easter(year)
+    return {
+        GOOD_FRIDAY: (sunday + timedelta(days=GOOD_FRIDAY_FROM_EASTER),),
+        CARNIVAL: tuple(sunday + timedelta(days=offset) for offset in CARNIVAL_FROM_EASTER),
+        CORPUS_CHRISTI: (sunday + timedelta(days=CORPUS_CHRISTI_FROM_EASTER),),
+    }
+
+
+def easter(year: int) -> date:
+    """Easter Sunday in the Gregorian calendar (the anonymous, or Meeus, algorithm)."""
+    golden = year % 19
+    century, year_of_century = divmod(year, 100)
+    leap_centuries, century_rest = divmod(century, 4)
+    correction = (century + 8) // 25
+    moon = (century - correction + 1) // 3
+    epact = (19 * golden + century - leap_centuries - moon + 15) % 30
+    leap_years, year_rest = divmod(year_of_century, 4)
+    weekday = (32 + 2 * century_rest + 2 * leap_years - epact - year_rest) % 7
+    shift = (golden + 11 * epact + 22 * weekday) // 451
+    month, day = divmod(epact + weekday - 7 * shift + 114, 31)
+    return date(year, month, day + 1)
 
 
 def hours_for(day: date) -> tuple[time, time]:

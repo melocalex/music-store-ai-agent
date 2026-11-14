@@ -85,7 +85,7 @@ An order that has not been delivered has not started the receipt windows. Aria n
 
 - Monday to Friday 09:00 to 18:00, Saturday 09:00 to 13:00, closed on Sunday and fixed holidays. Opening and closing minutes count as open.
 - Fixed holidays include Santo Antônio (13/06) in Campo Grande and the national Dia Nacional de Zumbi e da Consciência Negra (20/11).
-- Carnival, Good Friday, and Corpus Christi move every year and are not listed. Aria says so and hands off.
+- Carnival, Good Friday, and Corpus Christi move every year. Their dates are computed from Easter. Good Friday closes the store. Carnival (Monday and Tuesday) and Corpus Christi have no set hours: the hours answer flags them, and Aria does not confirm hours and hands off.
 - For today, the answer uses the current time. For another day, it gives that day's hours. A DD/MM date means its next occurrence.
 
 ## Privacy

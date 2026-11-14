@@ -176,7 +176,8 @@ RETRY_PRICE = (
     "Responda de novo só com pares de produto e valor que uma ferramenta devolveu."
 )
 
-# Fixed dates only. Carnival, Good Friday, and Corpus Christi move and are not listed.
+# Fixed dates. The moving ones below are counted in days from Easter Sunday: Good Friday closes
+# the store, and Carnival and Corpus Christi have no set hours, so they are flagged instead.
 FIXED_HOLIDAYS = (
     (1, 1, "Confraternização Universal", "national"),
     (4, 21, "Tiradentes", "national"),
@@ -191,6 +192,12 @@ FIXED_HOLIDAYS = (
     (11, 20, "Dia Nacional de Zumbi e da Consciência Negra", "national"),
     (12, 25, "Natal", "national"),
 )
+GOOD_FRIDAY = "Sexta-feira Santa"
+GOOD_FRIDAY_FROM_EASTER = -2
+CARNIVAL = "Carnaval"
+CARNIVAL_FROM_EASTER = (-48, -47)
+CORPUS_CHRISTI = "Corpus Christi"
+CORPUS_CHRISTI_FROM_EASTER = 60
 
 SAMPLE_QUESTIONS = (
     "Quais violões até R$ 1000 vocês têm?",
