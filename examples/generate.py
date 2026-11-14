@@ -1,4 +1,4 @@
-"""Write five real transcripts. This module does not invent model output."""
+"""Write the five example transcripts with the configured Gemini model."""
 
 from __future__ import annotations
 
@@ -13,10 +13,22 @@ from pydantic_ai.messages import ModelMessage
 
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
+from music_store_agent.constants import (
+    DAILY_CAP_MESSAGE,
+    PROVIDER_ERROR_MESSAGE,
+    QUOTA_DAY_MESSAGE,
+    RATE_LIMIT_MESSAGE,
+)
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import make_deps
+from music_store_agent.run import run_turn
 
 OUT_DIR = Path(__file__).with_name("transcripts")
+EXIT_NO_KEY = 2
+EXIT_STOPPED = 3
+_STOPPERS = frozenset(
+    {PROVIDER_ERROR_MESSAGE, QUOTA_DAY_MESSAGE, RATE_LIMIT_MESSAGE, DAILY_CAP_MESSAGE}
+)
 
 SCRIPTS = (
     {
@@ -61,9 +73,14 @@ SCRIPTS = (
 )
 
 
+class GenerationStopped(Exception):
+    """The provider refused a turn, so the transcript would not show the assistant."""
+
+
 def render_transcript(title: str, model: str, day: date, commit: str, turns: list[str]) -> str:
     body = "\n\n".join(turns)
-    return f"# {title}\n\nModel: {model}\nDate: {day.isoformat()}\nCommit: {commit}\n\n{body}\n"
+    head = f"Model: {model}\nReference date: {day.isoformat()}\nCommit: {commit}"
+    return f"# {title}\n\n{head}\n\n{body}\n"
 
 
 def git_commit() -> str:
@@ -84,12 +101,13 @@ def tool_names(messages: list[ModelMessage]) -> str:
     return ", ".join(names) if names else "none"
 
 
-async def _write_all(model: str) -> None:
+async def _write_all(model: str) -> list[Path]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     conn = load_database()
     day = pinned_day(last_order_date(conn))
     commit = git_commit()
     agent = build_agent(model)
+    written: list[Path] = []
     with tempfile.TemporaryDirectory() as scratch:
         for script in SCRIPTS:
             deps = make_deps(
@@ -98,38 +116,46 @@ async def _write_all(model: str) -> None:
                 handoff_path=Path(scratch) / "handoffs.jsonl",
                 usage_path=Path(scratch) / "turns.json",
             )
-            text = await _script(agent, deps, script, model, day, commit)
-            (OUT_DIR / f"{script['title']}.md").write_text(text, encoding="utf-8")
+            text = await _script(agent, deps, script, (model, day, commit))
+            path = OUT_DIR / f"{script['title']}.md"
+            path.write_text(text, encoding="utf-8")
+            written.append(path)
+    return written
 
 
-async def _script(
-    agent,
-    deps,
-    script: dict[str, object],
-    model: str,
-    day: date,
-    commit: str,
-) -> str:
+async def _script(agent, deps, script: dict[str, object], header: tuple[str, date, str]) -> str:
+    """Each turn goes through run_turn, so the transcript shows what a customer would see."""
     history: list[ModelMessage] = []
     chunks: list[str] = []
     prompts = script["prompts"]
-    assert isinstance(prompts, tuple)
-    for prompt in prompts:
-        result = await agent.run(prompt, deps=deps, message_history=history)
-        history = list(result.all_messages())
-        tools = tool_names(list(result.new_messages()))
-        chunks.append(f"User: {prompt}\n\nAria: {result.output.message}\n\nTools: {tools}")
-    title = str(script["title"])
-    return render_transcript(title, model, day, commit, chunks)
+    if not isinstance(prompts, tuple):
+        raise TypeError("prompts must be a tuple")
+    for index, prompt in enumerate(prompts):
+        turn = await run_turn(agent, deps, prompt, history, index)
+        if turn.message in _STOPPERS:
+            raise GenerationStopped(f"{script['title']}, turn {index + 1}: {turn.message}")
+        history = list(turn.history)
+        tools = tool_names(list(turn.new_messages))
+        chunks.append(f"User: {prompt}\n\nAria: {turn.message}\n\nTools: {tools}")
+    model, day, commit = header
+    return render_transcript(str(script["title"]), model, day, commit, chunks)
 
 
 def main() -> int:
     if not os.environ.get("GOOGLE_API_KEY"):
-        print("Set GOOGLE_API_KEY to generate transcripts. Nothing here is invented.")
-        return 2
-    model = model_id()
-    asyncio.run(_write_all(model))
-    print(OUT_DIR)
+        print("Set GOOGLE_API_KEY to generate transcripts with the configured model.")
+        return EXIT_NO_KEY
+    try:
+        model = model_id()
+        written = asyncio.run(_write_all(model))
+    except ValueError as error:
+        print(error)
+        return EXIT_NO_KEY
+    except GenerationStopped as stop:
+        print(f"Stopped at {stop}. Files written before this point were kept.")
+        return EXIT_STOPPED
+    for path in written:
+        print(path)
     return 0
 
 

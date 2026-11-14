@@ -1,1 +1,1 @@
-"""Transcript generator. It refuses to invent a conversation."""
+"""Example transcripts generated with the configured model."""
