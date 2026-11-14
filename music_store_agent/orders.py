@@ -6,20 +6,34 @@ from datetime import date
 from decimal import Decimal
 
 from music_store_agent.constants import (
+    ASK_CONTACT,
+    ASK_PHONE,
     DEFECT_EXCHANGE_DAYS,
+    FACTORY_WARRANTY,
     LEGAL_WARRANTY_DAYS,
     MAX_VERIFICATION_ATTEMPTS,
     NOT_VERIFIED,
     NOT_YOUR_ORDER,
     OPEN_DELIVERY_STATUSES,
+    ORDER_CANCELLED,
     PREFERENCE_DAYS,
     REGRET_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
 )
-from music_store_agent.db import fetch_items, fetch_orders
+from music_store_agent.db import customers_with_email, fetch_order, fetch_order_items
 from music_store_agent.ledger import Ledger
 from music_store_agent.textutil import emails_match, fold, format_amount, format_brl, phones_match
+
+_STATUS_LABELS = {
+    "delivered": "entregue",
+    "shipped": "enviado",
+    "confirmed": "confirmado",
+    "pending": "pendente",
+    ORDER_CANCELLED: "cancelado",
+}
+_PAYMENT_LABELS = {"pix": "PIX", "debit": "cartão de débito", "boleto": "boleto"}
+_CREDIT_PREFIX = "credit_"
 
 
 @dataclass(frozen=True)
@@ -57,26 +71,33 @@ class OrderRecord:
 
 @dataclass
 class Identity:
+    """`failed_verifications` counts the whole session. A success does not reset it."""
+
     verified_customer_id: int | None = None
     failed_verifications: int = 0
     sender_phone: str | None = None
     locked: bool = False
 
 
-def load_orders(conn: sqlite3.Connection) -> dict[int, OrderRecord]:
-    names: dict[int, list[str]] = {}
-    for row in fetch_items(conn):
-        names.setdefault(int(row["order_id"]), []).append(str(row["name"]))
-    return {int(row["order_id"]): _order_from(row,
-        tuple(names.get(int(row["order_id"]),
-        ()))) for row in fetch_orders(conn)}
+@dataclass(frozen=True)
+class AfterSales:
+    text: str
+    open_to_request: bool
+
+
+def load_order(conn: sqlite3.Connection, order_id: int) -> OrderRecord | None:
+    row = fetch_order(conn, order_id)
+    if row is None:
+        return None
+    rows = fetch_order_items(conn, order_id)
+    items = tuple(f"{item['quantity']}x {item['name']}" for item in rows)
+    return _order_from(row, items)
 
 
 def _order_from(row: sqlite3.Row, items: tuple[str, ...]) -> OrderRecord:
-    buyer = Buyer(_first(str(row["customer_name"])),
-        str(row["email"]),
-        str(row["phone"]),
-        str(row["city"]))
+    buyer = Buyer(
+        _first(str(row["customer_name"])), str(row["email"]), str(row["phone"]), str(row["city"])
+    )
     pay = PayFact(str(row["status"]), Decimal(str(row["total_brl"])), str(row["payment_method"]))
     ship = ShipFact(
         date.fromisoformat(str(row["order_date"])),
@@ -99,7 +120,7 @@ def _optional_date(value: object) -> date | None:
 
 def verify(
     identity: Identity,
-    orders: dict[int, OrderRecord],
+    conn: sqlite3.Connection,
     order_id: int,
     email: str | None,
     phone: str | None,
@@ -107,24 +128,21 @@ def verify(
     if identity.locked or identity.failed_verifications >= MAX_VERIFICATION_ATTEMPTS:
         identity.locked = True
         return VERIFICATION_LOCKED
-    given_phone = identity.sender_phone or phone
-    if not email and not given_phone:
-        return "Preciso do e-mail completo ou do telefone completo usados nesse pedido."
-    order = orders.get(order_id)
-    if order is None or not _matches(order, email, given_phone):
+    phones = [given for given in (phone, identity.sender_phone) if given]
+    if not email and not phones:
+        return ASK_CONTACT
+    order = load_order(conn, order_id)
+    if order is None:
+        return _fail(identity)
+    email_ok = bool(email) and emails_match(order.buyer.email, email or "")
+    phone_ok = any(phones_match(order.buyer.phone, given) for given in phones)
+    shared = email_ok and customers_with_email(conn, order.buyer.email) > 1
+    if shared and not phones:
+        return ASK_PHONE
+    if not (phone_ok or (email_ok and not shared)):
         return _fail(identity)
     identity.verified_customer_id = order.customer_id
-    identity.failed_verifications = 0
     return f"Pedido {order.order_id} confirmado para {order.buyer.first_name}."
-
-
-def _matches(order: OrderRecord, email: str | None, phone: str | None) -> bool:
-    checks: list[bool] = []
-    if email:
-        checks.append(emails_match(order.buyer.email, email))
-    if phone:
-        checks.append(phones_match(order.buyer.phone, phone))
-    return bool(checks) and all(checks)
 
 
 def _fail(identity: Identity) -> str:
@@ -135,48 +153,68 @@ def _fail(identity: Identity) -> str:
     return VERIFICATION_FAILED
 
 
+def _owned(identity: Identity, conn: sqlite3.Connection, order_id: int) -> OrderRecord | str:
+    if identity.verified_customer_id is None:
+        return NOT_VERIFIED
+    order = load_order(conn, order_id)
+    if order is None or order.customer_id != identity.verified_customer_id:
+        return NOT_YOUR_ORDER
+    return order
+
+
 def read_order(
     identity: Identity,
-    orders: dict[int, OrderRecord],
+    conn: sqlite3.Connection,
     order_id: int,
     today: date,
     ledger: Ledger,
 ) -> str:
-    if identity.verified_customer_id is None:
-        return NOT_VERIFIED
-    order = orders.get(order_id)
-    if order is None or order.customer_id != identity.verified_customer_id:
-        return NOT_YOUR_ORDER
+    order = _owned(identity, conn, order_id)
+    if isinstance(order, str):
+        return order
     return _public_order(order, today, ledger)
 
 
 def _public_order(order: OrderRecord, today: date, ledger: Ledger) -> str:
     ledger.add_policy(order.pay.total)
+    total = order.pay.total
     lines = [
         f"Pedido {order.order_id} de {order.buyer.first_name}. Cidade: {order.buyer.city}.",
-        f"Status {order.pay.status}. Forma {order.pay.method}.",
-        f"Total gravado amount={format_amount(order.pay.total)} {format_brl(order.pay.total)}.",
+        f"Situação: {status_label(order.pay.status)}.",
+        f"Pagamento: {payment_label(order.pay.method)}.",
+        f"Total gravado: product_id=null amount={format_amount(total)} {format_brl(total)}.",
         f"Compra em {order.ship.ordered_on.isoformat()}.",
         _tracking(order),
         "Itens: " + ", ".join(order.items) if order.items else "Itens não localizados.",
     ]
-    if _is_late(order, today):
-        estimate = order.ship.estimate
-        status = order.pay.status
-        lines.append(f"A estimativa {estimate} já passou e o status segue {status}.")
+    if is_late(order, today):
+        lines.append(
+            f"A estimativa {order.ship.estimate} já passou e a situação segue "
+            f"{status_label(order.pay.status)}."
+        )
     if order.ship.notes.strip():
         lines.append(f"Nota interna resumida: {_note(order.ship.notes)}")
     lines.append("Não recalculo o total gravado.")
     return "\n".join(line for line in lines if line)
 
 
+def status_label(status: str) -> str:
+    return _STATUS_LABELS.get(status, status)
+
+
+def payment_label(method: str) -> str:
+    if method.startswith(_CREDIT_PREFIX):
+        return "cartão de crédito em " + method.removeprefix(_CREDIT_PREFIX)
+    return _PAYMENT_LABELS.get(method, method)
+
+
 def _tracking(order: OrderRecord) -> str:
     if order.ship.tracking:
-        return f"Rastreio {order.ship.tracking}."
-    return "Sem código de rastreio."
+        return f"Rastreio {order.ship.tracking}, no site dos Correios ou da Jadlog."
+    return "Sem código de rastreio. Ele é enviado por e-mail e WhatsApp no despacho."
 
 
-def _is_late(order: OrderRecord, today: date) -> bool:
+def is_late(order: OrderRecord, today: date) -> bool:
     estimate = order.ship.estimate
     return estimate is not None and order.pay.status in OPEN_DELIVERY_STATUSES and today > estimate
 
@@ -192,26 +230,28 @@ def _note(notes: str) -> str:
 
 def explain_after_sales(
     identity: Identity,
-    orders: dict[int, OrderRecord],
+    conn: sqlite3.Connection,
     order_id: int,
     today: date,
-) -> str:
-    if identity.verified_customer_id is None:
-        return NOT_VERIFIED
-    order = orders.get(order_id)
-    if order is None or order.customer_id != identity.verified_customer_id:
-        return NOT_YOUR_ORDER
-    if order.pay.status == "cancelled":
-        return f"O pedido {order.order_id} está cancelado. Não abro troca."
-    return "\n".join(
-        [
-            defect_line(order.ship.ordered_on, today),
-            warranty_line(),
-            regret_line(),
-            preference_line(),
-            "Não aprovo a solicitação. A equipe confirma.",
-        ]
-    )
+) -> AfterSales:
+    order = _owned(identity, conn, order_id)
+    if isinstance(order, str):
+        return AfterSales(order, False)
+    if order.pay.status == ORDER_CANCELLED:
+        return AfterSales(f"O pedido {order.order_id} está cancelado. Não abro troca.", False)
+    ordered_on = order.ship.ordered_on
+    delivered = order.pay.status not in OPEN_DELIVERY_STATUSES
+    lines = [
+        defect_line(ordered_on, today),
+        receipt_line("Garantia legal", LEGAL_WARRANTY_DAYS, ordered_on, today, delivered),
+        f"Garantia do fabricante: {FACTORY_WARRANTY}.",
+        receipt_line(
+            "Arrependimento, só em compra online", REGRET_DAYS, ordered_on, today, delivered
+        ),
+        receipt_line("Troca por preferência", PREFERENCE_DAYS, ordered_on, today, delivered),
+        "Não aprovo a solicitação. A equipe confirma.",
+    ]
+    return AfterSales("\n".join(lines), True)
 
 
 def defect_line(ordered_on: date, today: date) -> str:
@@ -223,22 +263,15 @@ def defect_line(ordered_on: date, today: date) -> str:
     )
 
 
-def warranty_line() -> str:
+def receipt_line(label: str, days: int, ordered_on: date, today: date, delivered: bool) -> str:
+    """Receipt is never before purchase, so a window still open from the purchase is open."""
+    head = f"{label}: {days} dias do recebimento."
+    if not delivered:
+        return f"{head} O pedido ainda não foi entregue, então esse prazo não começou."
+    elapsed = (today - ordered_on).days
+    if elapsed <= days:
+        return f"{head} A compra foi há {elapsed} dias, então esse prazo ainda está aberto."
     return (
-        f"Garantia legal: {LEGAL_WARRANTY_DAYS} dias do recebimento. "
-        "O pedido não tem a data de recebimento. Não confirmo."
-    )
-
-
-def regret_line() -> str:
-    return (
-        f"Arrependimento: {REGRET_DAYS} dias do recebimento, só se a compra foi online. "
-        "Não há canal nem data de recebimento. Informe a data. A equipe confirma."
-    )
-
-
-def preference_line() -> str:
-    return (
-        f"Troca por preferência: {PREFERENCE_DAYS} dias do recebimento. "
-        "Peça a data. A equipe confirma."
+        f"{head} A compra foi há {elapsed} dias e o pedido não guarda a data de recebimento. "
+        "Peça essa data."
     )

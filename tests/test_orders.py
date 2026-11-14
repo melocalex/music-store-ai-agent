@@ -1,80 +1,161 @@
-"""Order identity is full contact, and history is not recomputed."""
+"""Order identity is full contact, the attempt limit holds, and history is not recomputed."""
 
-from datetime import date
+import re
+from dataclasses import replace
+from datetime import date, timedelta
 
 from music_store_agent.constants import (
+    ASK_CONTACT,
+    ASK_PHONE,
     DEFECT_EXCHANGE_DAYS,
     LEGAL_WARRANTY_DAYS,
     MAX_VERIFICATION_ATTEMPTS,
+    NOT_VERIFIED,
     NOT_YOUR_ORDER,
+    REGRET_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
 )
 from music_store_agent.db import load_database
 from music_store_agent.ledger import Ledger
-from music_store_agent.orders import Identity, explain_after_sales, load_orders, read_order, verify
+from music_store_agent.orders import (
+    Identity,
+    defect_line,
+    explain_after_sales,
+    is_late,
+    load_order,
+    read_order,
+    receipt_line,
+    verify,
+)
 
 TODAY = date(2026, 3, 23)
 LUCAS_EMAIL = "lucas.mendes@jmail.com"
 LUCAS_PHONE = "(67) 99812-3456"
 ISABELA_EMAIL = "isabela.moreira@jmail.com"
-BRUNO_EMAIL = "bruno.martins@jmail.com"
-
-
-def _orders():
-    return load_orders(load_database())
+SHARED_EMAIL = "bruno.martins@jmail.com"
+BRUNO_11_PHONE = "(67) 98543-2109"
+BRUNO_43_PHONE = "(67) 99456-3456"
+WRONG_EMAIL = "outra.pessoa@jmail.com"
 
 
 def test_wrong_owner_and_attempt_limit() -> None:
-    orders = _orders()
+    conn = load_database()
     identity = Identity()
     for _ in range(MAX_VERIFICATION_ATTEMPTS - 1):
-        text = verify(identity, orders, 4, "outra.pessoa@jmail.com", None)
-        assert text == VERIFICATION_FAILED
-    locked = verify(identity, orders, 4, "outra.pessoa@jmail.com", None)
-    assert locked == VERIFICATION_LOCKED
+        assert verify(identity, conn, 4, WRONG_EMAIL, None) == VERIFICATION_FAILED
+    assert verify(identity, conn, 4, WRONG_EMAIL, None) == VERIFICATION_LOCKED
     assert identity.locked
+    assert verify(identity, conn, 4, LUCAS_EMAIL, None) == VERIFICATION_LOCKED
+    assert identity.verified_customer_id is None
 
 
-def test_full_phone_and_sender_override() -> None:
-    orders = _orders()
+def test_last_allowed_attempt_still_succeeds() -> None:
+    conn = load_database()
     identity = Identity()
-    text = verify(identity, orders, 4, None, "+55 67 99812-3456")
-    assert "Lucas" in text
-    assert identity.verified_customer_id == orders[4].customer_id
-    other = Identity(sender_phone="(67) 99999-0000")
-    refused = verify(other, orders, 4, LUCAS_EMAIL, LUCAS_PHONE)
-    assert refused == VERIFICATION_FAILED
+    for _ in range(MAX_VERIFICATION_ATTEMPTS - 1):
+        verify(identity, conn, 4, WRONG_EMAIL, None)
+    assert "Lucas" in verify(identity, conn, 4, LUCAS_EMAIL, None)
+    assert not identity.locked
 
 
-def test_duplicate_email_is_order_scoped() -> None:
-    orders = _orders()
+def test_a_success_does_not_reset_the_failure_count() -> None:
+    conn = load_database()
     identity = Identity()
-    text = verify(identity, orders, 10, BRUNO_EMAIL, None)
+    for _ in range(MAX_VERIFICATION_ATTEMPTS - 1):
+        verify(identity, conn, 1, WRONG_EMAIL, None)
+    assert "Lucas" in verify(identity, conn, 4, LUCAS_EMAIL, None)
+    assert verify(identity, conn, 1, WRONG_EMAIL, None) == VERIFICATION_LOCKED
+
+
+def test_either_full_credential_works_and_the_sender_phone_adds_a_way() -> None:
+    conn = load_database()
+    by_phone = Identity()
+    assert "Lucas" in verify(by_phone, conn, 4, None, "+55 67 99812-3456")
+    stranger_sender = Identity(sender_phone="(67) 99999-0000")
+    assert "Lucas" in verify(stranger_sender, conn, 4, LUCAS_EMAIL, None)
+    owner_sender = Identity(sender_phone=LUCAS_PHONE)
+    assert "Lucas" in verify(owner_sender, conn, 4, None, None)
+    nobody = Identity()
+    assert verify(nobody, conn, 4, None, None) == ASK_CONTACT
+    assert nobody.failed_verifications == 0
+
+
+def test_shared_email_needs_the_phone_of_that_order() -> None:
+    conn = load_database()
+    identity = Identity()
+    assert verify(identity, conn, 10, SHARED_EMAIL, None) == ASK_PHONE
+    assert identity.verified_customer_id is None
+    assert identity.failed_verifications == 0
+    assert verify(identity, conn, 10, SHARED_EMAIL, BRUNO_43_PHONE) == VERIFICATION_FAILED
+    assert "Bruno" in verify(identity, conn, 10, SHARED_EMAIL, BRUNO_11_PHONE)
     assert identity.verified_customer_id == 11
-    assert "confirmado" in text
-    denied = read_order(identity, orders, 1, TODAY, Ledger())
-    assert denied == NOT_YOUR_ORDER
+    assert read_order(identity, conn, 1, TODAY, Ledger()) == NOT_YOUR_ORDER
 
 
-def test_stored_total_and_other_order_tracking() -> None:
-    orders = _orders()
+def test_order_tools_refuse_before_verification() -> None:
+    conn = load_database()
     identity = Identity()
-    verify(identity, orders, 3, ISABELA_EMAIL, None)
+    assert read_order(identity, conn, 4, TODAY, Ledger()) == NOT_VERIFIED
+    result = explain_after_sales(identity, conn, 4, TODAY)
+    assert result.text == NOT_VERIFIED
+    assert not result.open_to_request
+
+
+def test_stored_total_items_and_labels() -> None:
+    conn = load_database()
+    identity = Identity()
+    verify(identity, conn, 3, ISABELA_EMAIL, None)
     ledger = Ledger()
-    text = read_order(identity, orders, 3, TODAY, ledger)
+    text = read_order(identity, conn, 3, TODAY, ledger)
     assert "3450.00" in text
     assert "3498" not in text
-    assert read_order(identity, orders, 1, TODAY, Ledger()) == NOT_YOUR_ORDER
+    assert re.search(r"Itens: \d+x ", text)
+    assert "entregue" in text or "enviado" in text or "confirmado" in text
+    assert ledger.policy_has(load_order(conn, 3).pay.total)
+    assert read_order(identity, conn, 1, TODAY, Ledger()) == NOT_YOUR_ORDER
 
 
-def test_order_seven_states_both_windows() -> None:
-    orders = _orders()
+def test_defect_window_is_inclusive_on_day_thirty() -> None:
+    bought = date(2026, 1, 1)
+    inside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS))
+    outside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS + 1))
+    assert "dentro do prazo" in inside
+    assert "fora do prazo" in outside
+
+
+def test_receipt_windows_use_the_purchase_as_a_lower_bound() -> None:
+    bought = date(2026, 1, 1)
+    open_day = bought + timedelta(days=LEGAL_WARRANTY_DAYS)
+    late_day = bought + timedelta(days=LEGAL_WARRANTY_DAYS + 1)
+    still_open = receipt_line("Garantia", LEGAL_WARRANTY_DAYS, bought, open_day, True)
+    assert "ainda está aberto" in still_open
+    unsure = receipt_line("Garantia", LEGAL_WARRANTY_DAYS, bought, late_day, True)
+    assert "Peça essa data" in unsure
+    waiting = receipt_line("Arrependimento", REGRET_DAYS, bought, late_day, False)
+    assert "não começou" in waiting
+
+
+def test_order_seven_states_the_windows() -> None:
+    conn = load_database()
     identity = Identity()
-    verify(identity, orders, 7, orders[7].buyer.email, None)
-    text = explain_after_sales(identity, orders, 7, TODAY)
-    assert str(DEFECT_EXCHANGE_DAYS) in text
-    assert str(LEGAL_WARRANTY_DAYS) in text
-    assert "fora do prazo" in text
-    assert "Não aprovo" in text
-    assert "2026-02-17" not in text or "recebimento" in text
+    order = load_order(conn, 7)
+    verify(identity, conn, 7, order.buyer.email, None)
+    result = explain_after_sales(identity, conn, 7, TODAY)
+    elapsed = (TODAY - order.ship.ordered_on).days
+    assert DEFECT_EXCHANGE_DAYS < elapsed <= LEGAL_WARRANTY_DAYS
+    assert "fora do prazo" in result.text
+    assert f"Garantia legal: {LEGAL_WARRANTY_DAYS} dias do recebimento. A compra foi" in result.text
+    assert "ainda está aberto" in result.text
+    assert "Não aprovo" in result.text
+    assert result.open_to_request
+
+
+def test_late_starts_the_day_after_the_estimate() -> None:
+    conn = load_database()
+    order = load_order(conn, 8)
+    estimate = order.ship.estimate
+    assert not is_late(order, estimate)
+    assert is_late(order, estimate + timedelta(days=1))
+    delivered = replace(order, pay=replace(order.pay, status="delivered"))
+    assert not is_late(delivered, estimate + timedelta(days=1))

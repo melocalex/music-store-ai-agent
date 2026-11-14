@@ -34,7 +34,7 @@ from music_store_agent.deps import Deps
 from music_store_agent.guard import AgentReply, grounding_gap
 from music_store_agent.handoff import write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
-from music_store_agent.orders import explain_after_sales, load_orders, read_order, verify
+from music_store_agent.orders import explain_after_sales, read_order, verify
 from music_store_agent.policies import PolicySection, load_manual, sections_text
 from music_store_agent.prompts import INSTRUCTIONS
 from music_store_agent.quotes import quote_text
@@ -187,10 +187,16 @@ def verify_customer(
     email: str | None = None,
     phone: str | None = None,
 ) -> str:
-    """Confirm an order with the full email or full phone of that order's owner."""
+    """Confirm an order with the full email or full phone of that order's owner.
+
+    Args:
+        order_id: The order number the customer gave.
+        email: The full email the customer typed, if any.
+        phone: The full phone with area code the customer typed, if any.
+    """
     identity = ctx.deps.identity
     was_locked = identity.locked
-    text = verify(identity, load_orders(ctx.deps.conn), order_id, email, phone)
+    text = verify(identity, ctx.deps.conn, order_id, email, phone)
     if identity.locked and not was_locked:
         _handoff(ctx, "verification_failed", "Confirmação falhou após as tentativas permitidas.")
     return text
@@ -198,22 +204,17 @@ def verify_customer(
 
 def get_order(ctx: RunContext[Deps], order_id: int) -> str:
     """Read one order that belongs to the confirmed customer. Uses the stored total."""
-    return read_order(ctx.deps.identity,
-        load_orders(ctx.deps.conn),
-        order_id,
-        ctx.deps.clock.today(),
-        ctx.deps.ledger)
+    deps = ctx.deps
+    return read_order(deps.identity, deps.conn, order_id, deps.clock.today(), deps.ledger)
 
 
 def explain_order_policy(ctx: RunContext[Deps], order_id: int) -> str:
     """State return and warranty rules for one confirmed order, then hand off. Does not approve."""
-    text = explain_after_sales(ctx.deps.identity,
-        load_orders(ctx.deps.conn),
-        order_id,
-        ctx.deps.clock.today())
-    if "A equipe confirma" in text:
+    deps = ctx.deps
+    result = explain_after_sales(deps.identity, deps.conn, order_id, deps.clock.today())
+    if result.open_to_request:
         _handoff(ctx, "return_request", f"Pedido {order_id}: regra explicada, sem aprovação.")
-    return text
+    return result.text
 
 
 def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:

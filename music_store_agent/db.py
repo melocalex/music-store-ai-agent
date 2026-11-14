@@ -5,7 +5,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from music_store_agent.constants import CATALOG_FETCH_LIMIT
+from music_store_agent.constants import CATALOG_FETCH_LIMIT, ORDER_ITEMS_LIMIT
 
 DATA_ENV = "MUSIC_STORE_DATA"
 
@@ -192,6 +192,36 @@ def fetch_orders(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         LIMIT ?
     """
     return list(conn.execute(sql, (CATALOG_FETCH_LIMIT,)))
+
+
+def fetch_order(conn: sqlite3.Connection, order_id: int) -> sqlite3.Row | None:
+    sql = """
+        SELECT o.order_id, o.customer_id, o.order_date, o.status, o.total_brl,
+               o.payment_method, o.tracking_code, o.estimated_delivery, o.notes,
+               c.name AS customer_name, c.phone, c.email, c.city
+        FROM orders o
+        JOIN customers c ON c.customer_id = o.customer_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    """
+    return conn.execute(sql, (order_id,)).fetchone()
+
+
+def fetch_order_items(conn: sqlite3.Connection, order_id: int) -> list[sqlite3.Row]:
+    sql = """
+        SELECT oi.quantity, p.name
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY p.name
+        LIMIT ?
+    """
+    return list(conn.execute(sql, (order_id, ORDER_ITEMS_LIMIT)))
+
+
+def customers_with_email(conn: sqlite3.Connection, email: str) -> int:
+    sql = "SELECT COUNT(*) AS n FROM customers WHERE lower(email) = lower(?) LIMIT 1"
+    return int(conn.execute(sql, (email.strip(),)).fetchone()["n"])
 
 
 def fetch_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
