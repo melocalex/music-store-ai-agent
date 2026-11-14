@@ -4,7 +4,13 @@ import os
 from decimal import Decimal
 
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.exceptions import (
+    ModelConnectionError,
+    ModelServerError,
+    ModelUnavailableError,
+)
 from pydantic_ai.models import Model, parse_model_id
+from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.providers import infer_provider_class
 
 from music_store_agent.catalog import (
@@ -18,9 +24,11 @@ from music_store_agent.catalog import (
 )
 from music_store_agent.clock import weekday_name
 from music_store_agent.constants import (
+    DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     DESTINATION_CITY,
     MODEL_ENV,
+    MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
@@ -44,19 +52,42 @@ from music_store_agent.textutil import amounts_in_text, parse_amount, percents_i
 
 _MANUAL = load_manual()
 
+# Provider outages move a request to the fallback. A rate limit, a quota, or a rejected request
+# (bad key, unknown model) does not: the fallback would fail the same way or hide the cause.
+PROVIDER_OUTAGES = (ModelUnavailableError, ModelServerError, ModelConnectionError)
+
 
 def model_id(raw: str | None = None) -> str:
-    """Return a Gemini id the installed Pydantic AI can resolve, or raise at startup."""
-    chosen = (raw if raw is not None else os.environ.get(MODEL_ENV, "")).strip() or DEFAULT_MODEL
+    """Return the primary Gemini id the installed Pydantic AI can resolve, or raise at startup."""
+    return _gemini_id(raw, MODEL_ENV, DEFAULT_MODEL)
+
+
+def fallback_model_id(raw: str | None = None) -> str:
+    """Return the fallback Gemini id, checked the same way as the primary."""
+    return _gemini_id(raw, MODEL_FALLBACK_ENV, DEFAULT_FALLBACK_MODEL)
+
+
+def _gemini_id(raw: str | None, env: str, default: str) -> str:
+    chosen = (raw if raw is not None else os.environ.get(env, "")).strip() or default
     provider, _name = parse_model_id(chosen)
     if provider != MODEL_PROVIDER:
-        raise ValueError(f"MODEL={chosen!r} is not a Gemini API id. Use {DEFAULT_MODEL!r}.")
+        raise ValueError(f"{env}={chosen!r} is not a Gemini API id. Use {default!r}.")
     infer_provider_class(provider)
     return chosen
 
 
+def model_chain(primary: Model | str, fallback: Model | str) -> FallbackModel:
+    """The primary answers. A provider outage moves that request to the fallback."""
+    return FallbackModel(primary, fallback, fallback_on=PROVIDER_OUTAGES)
+
+
 def build_agent(model: Model | str | None = None) -> Agent[Deps, AgentReply]:
-    chosen = model if isinstance(model, Model) else model_id(model)
+    """A Model instance runs as given. An id, or nothing, runs that primary with the fallback."""
+    if isinstance(model, Model):
+        chosen: Model = model
+    else:
+        primary, fallback = model_id(model), fallback_model_id()
+        chosen = model_chain(primary, fallback)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,
         deps_type=Deps,
