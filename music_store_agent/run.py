@@ -7,6 +7,7 @@ from pydantic_ai.exceptions import (
     FallbackExceptionGroup,
     ModelAPIError,
     ModelRateLimitError,
+    RunTimedOut,
     UnexpectedModelBehavior,
 )
 from pydantic_ai.messages import ModelMessage
@@ -24,6 +25,7 @@ from music_store_agent.constants import (
     SESSION_CAP_MESSAGE,
     SESSION_TURN_CAP,
     TURN_ERROR_MESSAGE,
+    TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.deps import Deps
 from music_store_agent.guard import AgentReply, PriceQuote
@@ -59,11 +61,13 @@ async def run_turn(
         return Turn(DAILY_CAP_MESSAGE, (), tuple(history), limited=True)
     firings = deps.counters.validator_firings
     try:
-        result = await agent.run(message, deps=deps, message_history=history)
+        result = await agent.run(
+            message, deps=deps, message_history=history, timeout=TURN_TIMEOUT_SECONDS
+        )
     except ModelAPIError as error:
         return Turn(provider_message(error), (), tuple(history), limited=True)
-    except FallbackExceptionGroup:
-        # The primary and the fallback both had an outage.
+    except (FallbackExceptionGroup, RunTimedOut):
+        # Both models had an outage, or the turn ran past its budget.
         return Turn(PROVIDER_ERROR_MESSAGE, (), tuple(history), limited=True)
     except UnexpectedModelBehavior:
         if deps.counters.validator_firings > firings:

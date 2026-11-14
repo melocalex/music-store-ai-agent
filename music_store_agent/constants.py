@@ -18,6 +18,13 @@ DEFAULT_MODEL = f"{MODEL_PROVIDER}:gemini-3.8-flash"
 MODEL_ENV = "MODEL"
 DEFAULT_FALLBACK_MODEL = f"{MODEL_PROVIDER}:gemini-3.6-flash"
 MODEL_FALLBACK_ENV = "MODEL_FALLBACK"
+MODEL_TIMEOUT_ENV = "MODEL_TIMEOUT_SECONDS"
+# One request gets one attempt on the primary, then one on the fallback, each under the timeout.
+# Both must fit in one turn, and no provider SDK retry is stacked on top.
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 20.0
+MODEL_ATTEMPTS_PER_REQUEST = 2
+PROVIDER_SDK_RETRIES = 0
+TURN_TIMEOUT_SECONDS = 45.0
 CLOCK_ENV = "MUSIC_STORE_CLOCK"
 TODAY_ENV = "MUSIC_STORE_TODAY"
 REAL_CLOCK_VALUE = "real"
