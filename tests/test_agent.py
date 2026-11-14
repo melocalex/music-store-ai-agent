@@ -128,6 +128,26 @@ def _deps(tmp_path):
     )
 
 
+def _crossed(messages, _info):
+    called = [
+        part
+        for message in messages
+        for part in getattr(message, "parts", [])
+        if getattr(part, "part_kind", "") == "tool-return"
+    ]
+    if not called:
+        return ModelResponse(parts=[ToolCallPart(tool_name="get_product", args={"query": "C70"})])
+    return _final("O C40 custa R$ 849,00.", [{"product_id": 82, "amount": "849.00"}])
+
+
+def test_a_known_price_on_the_wrong_product_fires_without_a_catch(tmp_path) -> None:
+    deps = _deps(tmp_path)
+    turn = asyncio.run(run_turn(build_agent(FunctionModel(_crossed)), deps, "C40?", [], 0))
+    assert turn.message == SAFE_PRICE_MESSAGE
+    assert deps.counters.validator_firings >= 1
+    assert deps.counters.validator_catches == 0
+
+
 def test_budget_text_is_parsed_and_nonsense_asks_for_a_retry() -> None:
     assert _money("R$ 1.000") == Decimal("1000.00")
     assert _money(" ") is None

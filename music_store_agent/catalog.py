@@ -297,7 +297,7 @@ def _empty(category: str | None) -> str:
 
 def _hit(product: Product, ledger: Ledger) -> str:
     price = effective_price(product)
-    ledger.add_product(product.product_id, price)
+    ledger.add_product(product.product_id, price, product.name)
     shown = format_brl(price)
     return (
         f"{product.name} | id {product.product_id} | {product.category} | "
@@ -377,7 +377,7 @@ def _available(product: Product, ledger: Ledger) -> str:
 
 
 def _table_price(product: Product, ledger: Ledger) -> str:
-    ledger.add_product(product.product_id, product.list_price)
+    ledger.add_product(product.product_id, product.list_price, product.name)
     shown = format_brl(product.list_price)
     amount = format_amount(product.list_price)
     return f"Preço de tabela product_id={product.product_id} amount={amount} {shown}."
@@ -385,7 +385,7 @@ def _table_price(product: Product, ledger: Ledger) -> str:
 
 def _promo_price(product: Product, ledger: Ledger) -> str:
     price = effective_price(product)
-    ledger.add_product(product.product_id, price)
+    ledger.add_product(product.product_id, price, product.name)
     shown = format_brl(price)
     percent = product.promos.percent
     campaign = product.promos.campaign
@@ -399,7 +399,7 @@ def _pix_price(product: Product, ledger: Ledger) -> str:
     from music_store_agent.money import pix_price
 
     price = pix_price(product.list_price)
-    ledger.add_product(product.product_id, price)
+    ledger.add_product(product.product_id, price, product.name)
     shown = format_brl(price)
     return f"PIX à vista product_id={product.product_id} amount={format_amount(price)} {shown}."
 
