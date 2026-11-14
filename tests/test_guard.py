@@ -65,6 +65,43 @@ def test_a_weight_or_version_next_to_a_price_does_not_fail_the_reply() -> None:
     assert not grounding_gap("O C40 pesa 3,50 kg e custa 3,50.", quotes, ledger).ok
 
 
+def _catalog_names() -> dict[int, str]:
+    return {product.product_id: product.name for product in load_catalog(load_database())}
+
+
+def test_a_parcel_count_is_not_the_bass_with_the_same_number() -> None:
+    names = _catalog_names()
+    for count in (2, 3, 4, 5, 6):
+        parcels = split_parcels(C40, count)
+        ledger = _ledger()
+        for amount in (parcels.first, parcels.rest):
+            ledger.add_product(81, amount, "Yamaha C40 Nylon Natural")
+        quotes = [
+            PriceQuote(product_id=81, amount=amount)
+            for amount in (C40, parcels.first, parcels.rest)
+        ]
+        first, rest = format_brl(parcels.first), format_brl(parcels.rest)
+        inline = (
+            f"O Yamaha C40 custa R$ 599,90. No cartão sai em {count}x sem juros: "
+            f"a primeira de {first} e as outras de {rest}."
+        )
+        listed = f"O Yamaha C40 custa R$ 599,90.\n- {count}x: primeira de {first}, demais de {rest}"
+        assert grounding_gap(inline, quotes, ledger, names).ok, inline
+        assert grounding_gap(listed, quotes, ledger, names).ok, listed
+
+
+def test_a_bass_named_by_its_code_still_owns_its_price() -> None:
+    names = _catalog_names()
+    ledger = _ledger()
+    c40 = [PriceQuote(product_id=81, amount=C40)]
+    assert not grounding_gap("O Yamaha Bass 3X custa R$ 599,90.", c40, ledger, names).ok
+    bass = next(item for item in load_catalog(load_database()) if item.product_id == 137)
+    price = effective_price(bass)
+    ledger.add_product(137, price, bass.name)
+    own = [PriceQuote(product_id=137, amount=price)]
+    assert grounding_gap(f"O Yamaha Bass 3X custa {format_brl(price)}.", own, ledger, names).ok
+
+
 def test_amount_must_sit_next_to_its_own_product() -> None:
     ledger = _ledger()
     other = [PriceQuote(product_id=82, amount=C70)]

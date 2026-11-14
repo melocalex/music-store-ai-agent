@@ -102,6 +102,7 @@ _AMOUNT_TEXT = re.compile(rf"(?:{_CURRENCY})?\s*({_NUMBER})\s*(?:reais|real|BRL)
 _PERCENT = re.compile(
     r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:%|por\s*cento\b|percent\b)", re.IGNORECASE
 )
+_PARCEL_COUNT = re.compile(r"\d{1,2}x")
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 # A Brazilian phone: optional +55, a DDD with or without parentheses or a trunk 0, then 8 or 9
 # digits. A date and an hour, such as 2026-03-23 09:00, has no run of four digits after the DDD.
@@ -348,15 +349,22 @@ def _masked_phone(match: re.Match[str]) -> str:
 
 
 def code_tokens(text: str) -> set[str]:
+    """Model codes such as c40, gd20, or su21s.
+
+    "3x" alone is a parcel count, not a code, so "em 3x" never names the Yamaha Bass 3X. That
+    bass is named by "bass 3x", which joins into "bass3x".
+    """
     folded = fold(text)
     found: set[str] = set()
     for token in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", folded):
         compact = token.replace("-", "")
+        if _PARCEL_COUNT.fullmatch(compact):
+            continue
         if re.search(r"[a-z]", compact) and re.search(r"\d", compact):
             found.add(compact)
     parts = re.findall(r"[a-z0-9]+", folded)
     for left, right in zip(parts, parts[1:], strict=False):
-        if re.fullmatch(r"[a-z]+", left) and right.isdigit():
+        if re.fullmatch(r"[a-z]+", left) and (right.isdigit() or _PARCEL_COUNT.fullmatch(right)):
             found.add(left + right)
         if left.isdigit() and re.fullmatch(r"[a-z]+", right):
             found.add(left + right)
