@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Empório da Música</title>
+  <desc id="desc">An AI customer-service agent that never invents a price.</desc>
+  <style>
+    .bg { fill: #14362B; }
+    .ink { fill: #F7F4EF; }
+    .muted { fill: #D5E6DC; }
+    .note { fill: #E7C56A; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #F4EFE6; }
+      .ink { fill: #14362B; }
+      .muted { fill: #3E5C4C; }
+      .note { fill: #1F6B4A; }
+    }
+  </style>
+  <rect class="bg" width="1200" height="300" rx="28" fill="#14362B"/>
+  <g class="note" fill="#E7C56A">
+    <path d="M150 78c18 10 18 28 0 36-14 6-26-2-26-16 0-16 12-26 26-20z"/>
+    <path d="M168 90V46l64-16v44"/>
+    <path d="M232 86c18 10 18 28 0 36-14 6-26-2-26-16 0-16 12-26 26-20z"/>
+    <path d="M310 120c16 8 16 24 0 32-12 5-22-2-22-14 0-14 10-22 22-18z"/>
+    <path d="M326 128V78l48-12v42"/>
+  </g>
+  <text class="ink" x="420" y="128" fill="#F7F4EF" font-family="Georgia, serif" font-size="54">Empório da Música</text>
+  <text class="muted" x="420" y="188" fill="#D5E6DC" font-family="Georgia, serif" font-size="26">An AI customer-service agent that never invents a price.</text>
+  <text class="muted" x="420" y="236" fill="#D5E6DC" font-family="Georgia, serif" font-size="22">Campo Grande / MS · virtual assistant Aria</text>
+</svg>
