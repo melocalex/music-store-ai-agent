@@ -19,6 +19,7 @@ from music_store_agent.catalog import (
 from music_store_agent.constants import (
     BLACK_FRIDAY,
     CENT,
+    SEARCH_ROW_CAP,
     SORT_PRICE_ASC,
     STATE_AVAILABLE,
     STATE_COMING_SOON,
@@ -213,6 +214,21 @@ def test_discontinued_and_unknown_states_carry_no_price() -> None:
     unknown = describe_one(products, odd, ledger)
     assert "não permite venda" in unknown
     assert 81 not in ledger.by_product
+
+
+def test_more_matches_than_rows_say_how_many_and_discontinued_hides_stock() -> None:
+    products = _products()
+    yamaha = find_products(products, "Yamaha")
+    assert len(yamaha) > SEARCH_ROW_CAP
+    text = describe_matches(products, yamaha, Ledger())
+    assert f"Mostrando {SEARCH_ROW_CAP} de {len(yamaha)}." in text
+    two = describe_matches(products, find_products(products, "Takamine")[:2], Ledger())
+    assert "Mostrando" not in two
+    bass = _by_id(products, 136)
+    assert product_state(bass) == STATE_DISCONTINUED and bass.details.stock > 0
+    assert "Estoque" not in describe_one(products, bass, Ledger())
+    sold_out = next(p for p in products if product_state(p) == STATE_OUT_OF_STOCK)
+    assert "Estoque gravado: 0." in describe_one(products, sold_out, Ledger())
 
 
 def test_specs_are_shown() -> None:

@@ -503,6 +503,11 @@ def describe_matches(products: tuple[Product, ...], found: list[Product], ledger
     if len(found) > 1:
         lines = [f"Encontrei {len(found)} modelos. Qual deles?"]
         lines.extend(_match_line(product, ledger) for product in found[:SEARCH_ROW_CAP])
+        if len(found) > SEARCH_ROW_CAP:
+            lines.append(
+                f"Mostrando {SEARCH_ROW_CAP} de {len(found)}. Peça o código do modelo ou mais "
+                "detalhes para estreitar."
+            )
         return "\n".join(lines)
     return describe_one(products, found[0], ledger)
 
@@ -540,8 +545,9 @@ def _unavailable(
     ledger: Ledger,
     reason: str,
 ) -> str:
-    stock = product.details.stock
-    lines = [f"{product.name} {reason}. Estoque gravado: {stock}."]
+    lines = [f"{product.name} {reason}."]
+    if product_state(product) != STATE_DISCONTINUED:
+        lines[0] += f" Estoque gravado: {product.details.stock}."
     lines.append("Não está à venda, então não cito preço.")
     lines.extend(_similar_lines(products, product, ledger))
     return "\n".join(lines)
