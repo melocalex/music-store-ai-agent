@@ -22,8 +22,13 @@ from music_store_agent.constants import (
     MODEL_ENV,
     MODEL_PROVIDER,
     OUTPUT_RETRIES,
+    PAYMENT_PIX,
     RETRY_PRICE,
+    SORT_PRICE_ASC,
     TOOL_RETRIES,
+    Destination,
+    PaymentMethod,
+    SortOrder,
 )
 from music_store_agent.deps import Deps
 from music_store_agent.guard import AgentReply, grounding_gap
@@ -101,30 +106,59 @@ def search_products(
     query: str = "",
     category: str | None = None,
     max_price: str | None = None,
-    sort_by: str = "price_asc",
+    sort_by: SortOrder = SORT_PRICE_ASC,
     offset: int = 0,
 ) -> str:
-    """Search sellable instruments. Category uses the Portuguese catalog name."""
+    """Search instruments that are for sale, five rows at a time.
+
+    Args:
+        query: Customer words such as "violão eletroacústico" or "ukulele concert".
+            Words outside the catalog vocabulary are ignored.
+        category: Family in any spelling, for example "violões", "Violão", or "Guitarras".
+        max_price: Budget in reais, for example "1000" or "1.000,00".
+        sort_by: price_asc for the cheapest first, price_desc for the most expensive first.
+        offset: Row to start from, to see the next block.
+    """
     ceiling = _money(max_price)
     request = CatalogQuery(query, category, ceiling, sort_by, offset)
     return _shown(ctx, search_catalog(load_catalog(ctx.deps.conn), request, ctx.deps.ledger))
 
 
-def get_product(ctx: RunContext[Deps], query: str) -> str:
-    """Look up one model. Returns out of stock, discontinued, coming soon, or several matches."""
+def get_product(ctx: RunContext[Deps], query: str = "", product_id: int | None = None) -> str:
+    """Look up one model: state, price, PIX, promotion, specs, or several matches.
+
+    Args:
+        query: Model code or name, for example "C40", "GD-20", or "Takamine".
+        product_id: The id a previous tool printed. Use it instead of the query when known.
+    """
+    if not query.strip() and product_id is None:
+        return "Diga o modelo, o código ou o id do produto."
     products = load_catalog(ctx.deps.conn)
-    return _shown(ctx, describe_matches(products, find_products(products, query), ctx.deps.ledger))
+    found = find_products(products, query, product_id)
+    return _shown(ctx, describe_matches(products, found, ctx.deps.ledger))
 
 
 def quote_offer(
     ctx: RunContext[Deps],
     query: str,
     quantity: int = 1,
-    payment: str = "pix",
+    payment: PaymentMethod = PAYMENT_PIX,
     installments: int = 1,
-    destination: str = DESTINATION_CITY,
+    destination: Destination = DESTINATION_CITY,
 ) -> str:
-    """Price one sellable product. Refuses a price for anything not for sale."""
+    """Price one sellable product with payment, installments, and freight.
+
+    Refuses a price for anything not for sale.
+
+    Args:
+        query: Model code, name, or the product id a tool printed, for example "C40" or "81".
+        quantity: Units, limited by the stock.
+        payment: pix, debit, credit, boleto, or pix_and_card.
+        installments: Number of credit card parcels, from 1 to 12.
+        destination: campo_grande for the city, other for any other city.
+    """
+    if not query.strip():
+        return "Diga o modelo, o código ou o id do produto."
     products = load_catalog(ctx.deps.conn)
     found = find_products(products, query)
     if len(found) != 1 or not is_sellable(found[0]):

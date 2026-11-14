@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from music_store_agent.catalog import (
     CatalogQuery,
+    effective_price,
     find_products,
     is_sellable,
     load_catalog,
@@ -11,6 +12,7 @@ from music_store_agent.catalog import (
     search_catalog,
 )
 from music_store_agent.constants import (
+    SORT_PRICE_ASC,
     STATE_AVAILABLE,
     STATE_COMING_SOON,
     STATE_DISCONTINUED,
@@ -73,3 +75,44 @@ def test_empty_wind_category() -> None:
     products = _products()
     text = search_catalog(products, CatalogQuery(text="flauta"), Ledger())
     assert "não têm produtos à venda" in text
+
+
+def test_category_spelling_is_normalised() -> None:
+    products = _products()
+    for spelling in ("violões", "Violão", "violao", "Violões"):
+        request = CatalogQuery(category=spelling, max_price=Decimal("1000"))
+        assert "de 12." in search_catalog(products, request, Ledger()), spelling
+    unknown = search_catalog(products, CatalogQuery(category="xilofone"), Ledger())
+    assert "Não conheço a categoria" in unknown
+
+
+def test_words_outside_the_catalog_are_ignored_and_specs_count() -> None:
+    products = _products()
+    question = "Quais opções de violões disponíveis custando até R$1000?"
+    text = search_catalog(products, CatalogQuery(question, max_price=Decimal("1000")), Ledger())
+    assert "de 12." in text
+    electric = find_products(products, "violão eletroacústico")
+    assert electric
+    assert all(("electronics", "yes") in product.details.specs for product in electric)
+    cheap = search_catalog(products, CatalogQuery(text="violão preço baixo"), Ledger())
+    assert "mais de uma família" not in cheap
+
+
+def test_expensive_words_sort_from_the_top() -> None:
+    products = _products()
+    violoes = [p for p in products if p.category == "Violões" and is_sellable(p)]
+    top = max(violoes, key=effective_price)
+    text = search_catalog(products, CatalogQuery(text="o violão mais caro"), Ledger())
+    assert text.splitlines()[1].startswith(top.name)
+    cheap = search_catalog(products, CatalogQuery(text="violão", sort_by=SORT_PRICE_ASC), Ledger())
+    assert not cheap.splitlines()[1].startswith(top.name)
+
+
+def test_ids_and_empty_queries() -> None:
+    products = _products()
+    assert [product.product_id for product in find_products(products, "95")] == [95]
+    assert [product.product_id for product in find_products(products, "id 95")] == [95]
+    assert [product.product_id for product in find_products(products, "", 95)] == [95]
+    assert find_products(products, "") == []
+    assert find_products(products, "quanto custa") == []
+
