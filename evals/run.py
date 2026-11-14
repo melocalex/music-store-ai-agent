@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import statistics
 import tempfile
 import time
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from music_store_agent.agent import build_agent
+from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import SAFE_PRICE_MESSAGE
 from music_store_agent.db import last_order_date, load_database
@@ -55,12 +56,19 @@ def main(argv: list[str] | None = None) -> int:
     ]
     report = _report(runs, args)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RESULTS_DIR / "latest.md"
+    path = RESULTS_DIR / f"{_slug(args)}.md"
     path.write_text(report, encoding="utf-8")
     print(report)
     print(path)
     failed = any(not item.passed for group in runs for item in group)
     return 1 if failed else 0
+
+
+def _slug(args: argparse.Namespace) -> str:
+    """Stub output stays local. A live run is named after its model and is committed."""
+    if args.stub:
+        return "stub"
+    return re.sub(r"[^a-z0-9.-]+", "-", model_id(args.model).casefold())
 
 
 def _parser() -> argparse.ArgumentParser:

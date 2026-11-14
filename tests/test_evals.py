@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import evals.run as run_module
 import yaml
 from evals.run import main
 from evals.score import score_case
@@ -39,8 +40,10 @@ def test_score_accepts_a_grounded_reply() -> None:
     assert score_case(case, transcript) == []
 
 
-def test_stub_runner_passes(capsys) -> None:
+def test_stub_runner_passes(capsys, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(run_module, "RESULTS_DIR", tmp_path)
     assert main(["--stub", "--runs", "1"]) == 0
+    assert (tmp_path / "stub.md").exists()
     captured = capsys.readouterr()
     assert "Pass rate: 25/25" in captured.out
 
