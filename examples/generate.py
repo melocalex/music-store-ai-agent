@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import tempfile
 from datetime import date
 from pathlib import Path
 
 from pydantic_ai.messages import ModelMessage
 
+from evals.stamp import git_commit
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import (
@@ -84,14 +84,6 @@ def render_transcript(title: str, model: str, day: date, commit: str, turns: lis
     body = "\n\n".join(turns)
     head = f"Model: {model}\nReference date: {day.isoformat()}\nCommit: {commit}"
     return f"# {title}\n\n{head}\n\n{body}\n"
-
-
-def git_commit() -> str:
-    try:
-        output = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return "unknown"
-    return output.strip() or "unknown"
 
 
 def tool_names(messages: list[ModelMessage]) -> str:

@@ -29,6 +29,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 from evals.score import score_case
+from evals.stamp import git_commit, reference_day, written_at
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import (
@@ -284,6 +285,8 @@ def _report(runs: list[Pass], args: argparse.Namespace) -> str:
         "# Eval results",
         "",
         f"Mode: {_mode(args)}. Runs: {len(runs)} of {args.runs}.",
+        f"Commit: {git_commit()}. Reference date: {reference_day().isoformat()}. "
+        f"Written at: {written_at()}.",
         "",
         f"Pass rate: {sum(item.passed for item in flat)}/{len(flat)} case-runs.",
         f"Strict pass (every run): {sum(all(flags) for flags in by_id.values())}/{len(by_id)}.",

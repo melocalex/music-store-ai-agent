@@ -9,15 +9,13 @@ the answer its own way.
 from __future__ import annotations
 
 import json
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from evals.stamp import reference_day
 from music_store_agent.constants import SAFE_PRICE_MESSAGE
 from music_store_agent.hours import parse_asked_day
 from music_store_agent.textutil import amounts_in_text, code_tokens, fold, parse_money_token
-
-REFERENCE_DAY = date(2026, 3, 23)
 
 
 def score_case(case: dict[str, Any], transcript: list[dict[str, Any]]) -> list[str]:
@@ -76,9 +74,9 @@ def _same_text(expected: str, actual: str) -> bool:
     money = parse_money_token(expected), parse_money_token(actual)
     if None not in money:
         return money[0] == money[1]
-    wanted_day = parse_asked_day(expected, REFERENCE_DAY)
+    wanted_day = parse_asked_day(expected, reference_day())
     if wanted_day is not None:
-        return parse_asked_day(actual, REFERENCE_DAY) == wanted_day
+        return parse_asked_day(actual, reference_day()) == wanted_day
     if fold(expected) in fold(actual):
         return True
     codes = code_tokens(expected)
