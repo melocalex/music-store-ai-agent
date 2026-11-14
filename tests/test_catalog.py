@@ -18,6 +18,7 @@ from music_store_agent.catalog import (
 )
 from music_store_agent.constants import (
     BLACK_FRIDAY,
+    CENT,
     SORT_PRICE_ASC,
     STATE_AVAILABLE,
     STATE_COMING_SOON,
@@ -39,8 +40,10 @@ def _by_id(products, product_id):
 
 
 def test_states_and_brand_conflicts() -> None:
-    products = _products()
-    assert len(products) == 65
+    conn = load_database()
+    products = load_catalog(conn)
+    stored = conn.execute("SELECT COUNT(*) AS n FROM products").fetchone()["n"]
+    assert len(products) == stored
     assert product_state(_by_id(products, 81)) == STATE_AVAILABLE
     assert is_sellable(_by_id(products, 81))
     assert product_state(_by_id(products, 96)) == STATE_OUT_OF_STOCK
@@ -165,3 +168,13 @@ def test_black_friday_status_comes_from_the_data() -> None:
     promo = PromoSet(Decimal("20"), BLACK_FRIDAY, (), (BLACK_FRIDAY,))
     on_sale = replace(c40, promos=promo)
     assert f"{BLACK_FRIDAY} está ativa em 1" in active_promotion_text((on_sale,), Ledger())
+
+
+def test_price_cap_includes_the_exact_price() -> None:
+    products = _products()
+    c40 = _by_id(products, 81)
+    price = effective_price(c40)
+    at_cap = search_catalog(products, CatalogQuery("C40", max_price=price), Ledger())
+    below = search_catalog(products, CatalogQuery("C40", max_price=price - CENT), Ledger())
+    assert c40.name in at_cap
+    assert c40.name not in below
