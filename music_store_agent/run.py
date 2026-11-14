@@ -31,6 +31,7 @@ from music_store_agent.constants import (
     TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.deps import Deps
+from music_store_agent.failover import PrimaryBreakerOpen
 from music_store_agent.guard import AgentReply, PriceQuote
 from music_store_agent.handoff import write_handoff
 from music_store_agent.usage import reserve
@@ -99,14 +100,15 @@ def log_answering_model(agent: Agent[Deps, AgentReply], messages: Sequence[Model
         if not failed:
             _log.info("primary model %s answered", answered)
             continue
-        causes = ", ".join(
-            f"{attempt.model_name} failed with {_error_type(attempt.error)}" for attempt in failed
-        )
+        causes = ", ".join(_attempt_text(attempt.model_name, attempt.error) for attempt in failed)
         _log.warning("fallback model %s answered after %s", answered, causes)
 
 
-def _error_type(error: str | None) -> str:
-    return (error or "rejected").split(":", 1)[0]
+def _attempt_text(model_name: str, error: str | None) -> str:
+    error_type = (error or "rejected").split(":", 1)[0]
+    if error_type == PrimaryBreakerOpen.__name__:
+        return f"{model_name} was skipped by the open breaker"
+    return f"{model_name} failed with {error_type}"
 
 
 def provider_message(error: ModelAPIError) -> str:

@@ -20,11 +20,13 @@ from music_store_agent.catalog import (
 )
 from music_store_agent.clock import weekday_name
 from music_store_agent.constants import (
+    DEFAULT_BREAKER_SECONDS,
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DESTINATION_CITY,
     MODEL_ATTEMPTS_PER_REQUEST,
+    MODEL_BREAKER_ENV,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
@@ -41,7 +43,7 @@ from music_store_agent.constants import (
     SortOrder,
 )
 from music_store_agent.deps import Deps
-from music_store_agent.failover import model_chain, request_settings
+from music_store_agent.failover import model_chain, request_settings, shared_breaker
 from music_store_agent.guard import AgentReply, grounding_gap
 from music_store_agent.handoff import reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
@@ -75,19 +77,32 @@ def _gemini_id(raw: str | None, env: str, default: str) -> str:
 
 def request_timeout(raw: str | None = None) -> float:
     """Seconds one model gets for one request. The primary and the fallback must fit in a turn."""
-    text = (raw if raw is not None else os.environ.get(MODEL_TIMEOUT_ENV, "")).strip()
-    if not text:
-        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    text, seconds = _env_seconds(raw, MODEL_TIMEOUT_ENV, DEFAULT_REQUEST_TIMEOUT_SECONDS)
     ceiling = TURN_TIMEOUT_SECONDS / MODEL_ATTEMPTS_PER_REQUEST
-    try:
-        seconds = float(text)
-    except ValueError:
-        seconds = math.nan
     if not 0 < seconds <= ceiling:
         raise ValueError(
             f"{MODEL_TIMEOUT_ENV}={text!r} must be seconds above 0 and at most {ceiling:g}."
         )
     return seconds
+
+
+def breaker_window(raw: str | None = None) -> float:
+    """Seconds the primary is skipped after an outage. Zero turns the breaker off."""
+    text, seconds = _env_seconds(raw, MODEL_BREAKER_ENV, DEFAULT_BREAKER_SECONDS)
+    if not 0 <= seconds < math.inf:
+        raise ValueError(f"{MODEL_BREAKER_ENV}={text!r} must be seconds, 0 or more.")
+    return seconds
+
+
+def _env_seconds(raw: str | None, env: str, default: float) -> tuple[str, float]:
+    """The text read, and its number of seconds: the default when empty, NaN when not a number."""
+    text = (raw if raw is not None else os.environ.get(env, "")).strip()
+    if not text:
+        return text, default
+    try:
+        return text, float(text)
+    except ValueError:
+        return text, math.nan
 
 
 def build_agent(
@@ -102,8 +117,9 @@ def build_agent(
     if isinstance(model, Model):
         chosen: Model = model
     else:
-        primary, fallback, seconds = model_id(model), fallback_model_id(), request_timeout()
-        chosen = model_chain(primary, fallback, seconds)
+        primary, fallback = model_id(model), fallback_model_id()
+        seconds, window = request_timeout(), breaker_window()
+        chosen = model_chain(primary, fallback, seconds, shared_breaker(primary, window))
         settings = settings or request_settings(seconds)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,

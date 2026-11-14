@@ -14,18 +14,19 @@ from datetime import date
 
 import anyio
 import httpx2
+from pydantic_ai.exceptions import ModelHTTPError, ModelUnavailableError
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models import override_allow_model_requests
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
-from music_store_agent import run
+from music_store_agent import failover, run
 from music_store_agent.agent import build_agent
 from music_store_agent.constants import PROVIDER_ERROR_MESSAGE, RATE_LIMIT_MESSAGE
 from music_store_agent.db import load_database
 from music_store_agent.deps import Deps, make_deps
-from music_store_agent.failover import model_chain, request_settings
+from music_store_agent.failover import CircuitBreaker, model_chain, request_settings
 from music_store_agent.run import Turn, run_turn
 
 SHORT_TIMEOUT = 0.2
@@ -249,3 +250,169 @@ def test_a_rate_limit_is_not_an_outage_and_stays_on_the_primary(tmp_path) -> Non
     played = _play(tmp_path, chain)
     assert played.turn.message == RATE_LIMIT_MESSAGE
     assert calls == [PRIMARY]
+
+
+# Circuit breaker on the primary. A fake clock stands in for time.monotonic.
+
+WINDOW = 300.0
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _switchable(name: str, calls: list[str], state: dict[str, str]) -> FunctionModel:
+    """A primary that is down (503), hanging, or answering, as `state["mode"]` says."""
+
+    async def respond(_messages, _info) -> ModelResponse:
+        calls.append(name)
+        if state["mode"] == "down":
+            raise ModelHTTPError.for_category(
+                ModelUnavailableError, status_code=503, model_name=name
+            )
+        if state["mode"] == "hang":
+            await asyncio.sleep(HANG)
+        args = {"message": "Olá.", "quotes": []}
+        return ModelResponse(parts=[ToolCallPart(tool_name="final_result", args=args)])
+
+    return FunctionModel(respond, model_name=name)
+
+
+def _answering_after_a_tool(name: str, calls: list[str]) -> FunctionModel:
+    """Two requests in one turn: a tool call, then the reply."""
+
+    def respond(messages, _info) -> ModelResponse:
+        calls.append(name)
+        returned = any(
+            getattr(part, "part_kind", "") == "tool-return"
+            for part in getattr(messages[-1], "parts", [])
+        )
+        if not returned:
+            return ModelResponse(parts=[ToolCallPart(tool_name="check_hours", args={})])
+        args = {"message": "Abrimos às nove.", "quotes": []}
+        return ModelResponse(parts=[ToolCallPart(tool_name="final_result", args=args)])
+
+    return FunctionModel(respond, model_name=name)
+
+
+def test_after_a_primary_503_the_next_turn_skips_it(tmp_path, caplog) -> None:
+    calls: list[str] = []
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    primary = _gemini(PRIMARY, 503, UNAVAILABLE, calls)
+    chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
+    with caplog.at_level(logging.INFO):
+        first = _play(tmp_path / "first", chain)
+        assert calls == [PRIMARY, FALLBACK]
+        assert breaker.remaining() == WINDOW
+        second = _play(tmp_path / "second", chain, request_settings(SHORT_TIMEOUT))
+    assert first.turn.message == second.turn.message == "Olá."
+    assert calls == [PRIMARY, FALLBACK, FALLBACK]
+    breaker_lines = [
+        (r.levelno, r.getMessage()) for r in caplog.records if r.name == failover.__name__
+    ]
+    assert breaker_lines == [
+        (
+            logging.WARNING,
+            f"breaker opened: primary model google:{PRIMARY} skipped for {WINDOW:.0f} seconds"
+            " after ModelUnavailableError",
+        ),
+        (
+            logging.WARNING,
+            f"primary model google:{PRIMARY} skipped: breaker open for {WINDOW:.0f} more seconds",
+        ),
+    ]
+    answered = [r.getMessage() for r in caplog.records if r.name == run.__name__]
+    assert answered == [
+        f"fallback model function:{FALLBACK} answered after {PRIMARY}"
+        " failed with ModelUnavailableError",
+        f"fallback model function:{FALLBACK} answered after {PRIMARY}"
+        " was skipped by the open breaker",
+    ]
+
+
+def test_after_a_primary_timeout_the_next_turn_gets_one_budget_not_two(tmp_path) -> None:
+    calls: list[str] = []
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    primary = _switchable(PRIMARY, calls, {"mode": "hang"})
+    chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
+    settings = request_settings(SHORT_TIMEOUT)
+    first = _play(tmp_path / "first", chain, settings)
+    assert calls == [PRIMARY, FALLBACK]
+    assert first.seconds >= SHORT_TIMEOUT
+    second = _play(tmp_path / "second", chain, settings)
+    assert second.turn.message == "Olá."
+    assert calls == [PRIMARY, FALLBACK, FALLBACK]
+    assert second.seconds < SHORT_TIMEOUT
+
+
+def test_later_tool_rounds_of_the_same_turn_skip_a_failed_primary(tmp_path) -> None:
+    down = {"mode": "down"}
+    without: list[str] = []
+    plain = model_chain(
+        _switchable(PRIMARY, without, down), _answering_after_a_tool(FALLBACK, without)
+    )
+    _play(tmp_path / "plain", plain)
+    assert without == [PRIMARY, FALLBACK, PRIMARY, FALLBACK]
+    calls: list[str] = []
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    guarded = model_chain(
+        _switchable(PRIMARY, calls, down),
+        _answering_after_a_tool(FALLBACK, calls),
+        SHORT_TIMEOUT,
+        breaker,
+    )
+    played = _play(tmp_path / "guarded", guarded)
+    assert played.turn.message == "Abrimos às nove."
+    assert calls == [PRIMARY, FALLBACK, FALLBACK]
+
+
+def test_the_primary_is_tried_again_after_the_window(tmp_path) -> None:
+    calls: list[str] = []
+    clock = FakeClock()
+    breaker = CircuitBreaker(WINDOW, clock=clock)
+    state = {"mode": "down"}
+    chain = model_chain(
+        _switchable(PRIMARY, calls, state), _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker
+    )
+
+    def turn_at(moment: float) -> list[str]:
+        clock.now = moment
+        before = len(calls)
+        _play(tmp_path / f"t{moment:g}", chain)
+        return calls[before:]
+
+    assert turn_at(0) == [PRIMARY, FALLBACK]
+    assert turn_at(WINDOW - 1) == [FALLBACK]
+    # The window passed and the primary is still down: tried once, and a new window starts.
+    assert turn_at(WINDOW) == [PRIMARY, FALLBACK]
+    assert turn_at(2 * WINDOW - 1) == [FALLBACK]
+    state["mode"] = "up"
+    assert turn_at(2 * WINDOW) == [PRIMARY]
+    # A success closes the breaker, so the primary answers without waiting for any window.
+    assert breaker.remaining() == 0
+    assert turn_at(2 * WINDOW) == [PRIMARY]
+
+
+def test_a_rate_limit_does_not_open_the_breaker(tmp_path) -> None:
+    calls: list[str] = []
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    primary = _gemini(PRIMARY, 429, RATE_LIMITED, calls)
+    chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
+    for name in ("first", "second"):
+        assert _play(tmp_path / name, chain).turn.message == RATE_LIMIT_MESSAGE
+    assert calls == [PRIMARY, PRIMARY]
+    assert breaker.remaining() == 0
+
+
+def test_a_zero_window_never_skips_the_primary(tmp_path) -> None:
+    calls: list[str] = []
+    breaker = CircuitBreaker(0, clock=FakeClock())
+    primary = _gemini(PRIMARY, 503, UNAVAILABLE, calls)
+    chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
+    _play(tmp_path / "first", chain)
+    _play(tmp_path / "second", chain)
+    assert calls == [PRIMARY, FALLBACK, PRIMARY, FALLBACK]
