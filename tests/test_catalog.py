@@ -137,6 +137,23 @@ def test_a_search_names_the_words_it_ignored() -> None:
         assert "ignorei" not in search_catalog(products, CatalogQuery(known), Ledger()), known
 
 
+def test_a_string_count_is_a_filter_not_the_word_cordas() -> None:
+    products = _products()
+    seven = [p for p in products if "7 Cordas" in p.name and is_sellable(p)]
+    six = [
+        p for p in products if p.category == "Violões" and is_sellable(p) and "Cordas" not in p.name
+    ]
+    text = search_catalog(products, CatalogQuery("violão de 6 cordas"), Ledger())
+    assert f"de {len(six)}." in text
+    assert "7 Cordas" not in text
+    sevens = search_catalog(products, CatalogQuery("violão de 7 cordas"), Ledger())
+    assert f"de {len(seven)}." in sevens
+    for twelve in ("12 cordas", "violão 12 cordas"):
+        assert "Mostrando" not in search_catalog(products, CatalogQuery(twelve), Ledger())
+    looked_up = find_products(products, "violão de 6 cordas")
+    assert looked_up and all("Cordas" not in p.name for p in looked_up)
+
+
 def test_expensive_words_sort_from_the_top() -> None:
     products = _products()
     violoes = [p for p in products if p.category == "Violões" and is_sellable(p)]
