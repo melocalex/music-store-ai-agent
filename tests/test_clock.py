@@ -141,4 +141,25 @@ def test_day_and_month_roll_forward_to_the_next_occurrence() -> None:
     assert parse_asked_day("20/11", today) == date(2026, 11, 20)
     assert parse_asked_day("2026-03-21", today) == SATURDAY
     assert parse_asked_day("31/02", today) is None
-    assert parse_asked_day("amanhã", today) is None
+    assert parse_asked_day("amanhã", today) == date(2026, 11, 15)
+    assert parse_asked_day("ontem", today) is None
+
+
+def test_full_dates_weekdays_and_relative_days_are_read() -> None:
+    assert MONDAY.weekday() == 0
+    expected = {
+        "25/12/2026": date(2026, 12, 25),
+        "25/12/26": date(2026, 12, 25),
+        "sábado": MONDAY + timedelta(days=5),
+        "no Sábado": MONDAY + timedelta(days=5),
+        "segunda-feira": MONDAY,
+        "próxima segunda": MONDAY + timedelta(days=7),
+        "segunda que vem": MONDAY + timedelta(days=7),
+        "hoje": MONDAY,
+        "amanhã": MONDAY + timedelta(days=1),
+        "depois de amanhã": MONDAY + timedelta(days=2),
+    }
+    for raw, day in expected.items():
+        assert parse_asked_day(raw, MONDAY) == day, raw
+    for wrong in ("31/02/2026", "32/13", "domingueira", "semana que vem"):
+        assert parse_asked_day(wrong, MONDAY) is None, wrong

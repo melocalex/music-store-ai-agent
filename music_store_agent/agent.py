@@ -321,11 +321,15 @@ def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:
     """Hours of one day, holidays included, and whether the store is open right now.
 
     Args:
-        day: YYYY-MM-DD or DD/MM. Leave empty for today.
+        day: YYYY-MM-DD, DD/MM/YYYY, DD/MM, hoje, amanhã, or a weekday such as sábado.
+            Leave empty for today.
     """
     asked = parse_asked_day(day, ctx.deps.clock.today())
     if day and asked is None:
-        return "Não entendi a data. Use AAAA-MM-DD ou DD/MM."
+        return (
+            "Não entendi a data. Use AAAA-MM-DD, DD/MM/AAAA, DD/MM, hoje, amanhã "
+            "ou um dia da semana."
+        )
     return hours_answer(ctx.deps.clock.now(), asked)
 
 

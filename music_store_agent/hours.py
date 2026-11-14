@@ -1,7 +1,7 @@
 """Opening hours, including the fixed holiday list."""
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from music_store_agent.clock import (
     STORE_ZONE,
@@ -21,8 +21,19 @@ from music_store_agent.constants import (
     LANDLINE_PHONE,
     WHATSAPP_PHONE,
 )
+from music_store_agent.textutil import fold
 
-_DAY_MONTH = re.compile(r"(\d{1,2})[/-](\d{1,2})")
+_DAY_MONTH = re.compile(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}|\d{2}))?")
+_CENTURY = 100
+_CENTURY_START = 2000
+_WEEK = 7
+_RELATIVE_DAYS = {"hoje": 0, "amanha": 1, "depois de amanha": 2}
+# Folded weekday names, Monday first, as date.weekday() counts them.
+_WEEKDAY_STEMS = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
+_WEEKDAY = re.compile(
+    r"(?:(?:n[oa]|est[ea])\s+)?(?P<next>proxim[oa]\s+)?"
+    rf"(?P<day>{'|'.join(_WEEKDAY_STEMS)})(?:[- ]feira)?(?P<coming>\s+que\s+vem)?"
+)
 
 
 def hours_answer(now: datetime, asked: date | None = None) -> str:
@@ -79,13 +90,23 @@ def _right_now(local: datetime) -> str:
 
 
 def parse_asked_day(raw: str | None, today: date) -> date | None:
+    """YYYY-MM-DD, DD/MM/YYYY, DD/MM, "hoje", "amanhã", or a weekday such as "sábado"."""
     if raw is None or not raw.strip():
         return None
-    text = raw.strip()
+    text = fold(raw.strip())
     try:
         return date.fromisoformat(text)
     except ValueError:
-        return _day_month(text, today)
+        pass
+    if text in _RELATIVE_DAYS:
+        return today + timedelta(days=_RELATIVE_DAYS[text])
+    weekday = _WEEKDAY.fullmatch(text)
+    if weekday is not None:
+        ahead = (_WEEKDAY_STEMS.index(weekday.group("day")) - today.weekday()) % _WEEK
+        if ahead == 0 and (weekday.group("next") or weekday.group("coming")):
+            ahead = _WEEK
+        return today + timedelta(days=ahead)
+    return _day_month(text, today)
 
 
 def _day_month(text: str, today: date) -> date | None:
@@ -95,6 +116,12 @@ def _day_month(text: str, today: date) -> date | None:
         return None
     day = int(match.group(1))
     month = int(match.group(2))
+    if match.group(3):
+        year = int(match.group(3))
+        try:
+            return date(year if year >= _CENTURY else _CENTURY_START + year, month, day)
+        except ValueError:
+            return None
     for year in (today.year, today.year + 1):
         try:
             candidate = date(year, month, day)
