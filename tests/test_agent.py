@@ -8,15 +8,18 @@ import pytest
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models import infer_model
+from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
-from music_store_agent.agent import _money, build_agent, model_id
+from music_store_agent.agent import _money, build_agent, fallback_model_id, model_id
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
+    DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     MODEL_ENV,
+    MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
     SAFE_PRICE_MESSAGE,
     SESSION_CAP_MESSAGE,
@@ -43,6 +46,29 @@ def test_unknown_model_prefix_fails_at_startup(monkeypatch) -> None:
         build_agent()
     with pytest.raises(ValueError):
         model_id("openai:gpt-4o")
+
+
+def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    monkeypatch.delenv(MODEL_ENV, raising=False)
+    monkeypatch.delenv(MODEL_FALLBACK_ENV, raising=False)
+    chain = build_agent().model
+    assert isinstance(chain, FallbackModel)
+    assert [model.model_id for model in chain.models] == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL]
+
+
+def test_fallback_id_has_its_own_variable_and_the_same_startup_check(monkeypatch) -> None:
+    monkeypatch.delenv(MODEL_ENV, raising=False)
+    monkeypatch.setenv(MODEL_FALLBACK_ENV, " google:gemini-3.5-flash-lite ")
+    assert fallback_model_id() == "google:gemini-3.5-flash-lite"
+    monkeypatch.setenv(MODEL_FALLBACK_ENV, "google-gla:gemini-3.6-flash")
+    with pytest.raises(ValueError, match=MODEL_FALLBACK_ENV):
+        build_agent()
+
+
+def test_a_model_instance_runs_as_given() -> None:
+    model = FunctionModel(_c40)
+    assert build_agent(model).model is model
 
 
 def _final(message: str, quotes: list[dict[str, object]]) -> ModelResponse:

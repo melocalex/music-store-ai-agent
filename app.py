@@ -83,7 +83,8 @@ def _ensure_session() -> None:
     if "deps" in st.session_state:
         return
     os.environ.setdefault("GOOGLE_API_KEY", host_key() or "")
-    st.session_state.agent = build_agent()
+    # Both Gemini models are built with the key, so without one there is no agent yet.
+    st.session_state.agent = build_agent() if host_key() else None
     st.session_state.deps = make_deps(load_database())
     st.session_state.history = []
     st.session_state.turns = 0

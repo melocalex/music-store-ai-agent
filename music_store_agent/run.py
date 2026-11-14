@@ -3,7 +3,12 @@
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
-from pydantic_ai.exceptions import ModelAPIError, ModelRateLimitError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import (
+    FallbackExceptionGroup,
+    ModelAPIError,
+    ModelRateLimitError,
+    UnexpectedModelBehavior,
+)
 from pydantic_ai.messages import ModelMessage
 
 from music_store_agent.clock import real_clock
@@ -57,6 +62,9 @@ async def run_turn(
         result = await agent.run(message, deps=deps, message_history=history)
     except ModelAPIError as error:
         return Turn(provider_message(error), (), tuple(history), limited=True)
+    except FallbackExceptionGroup:
+        # The primary and the fallback both had an outage.
+        return Turn(PROVIDER_ERROR_MESSAGE, (), tuple(history), limited=True)
     except UnexpectedModelBehavior:
         if deps.counters.validator_firings > firings:
             return _safe_price(deps, history)
