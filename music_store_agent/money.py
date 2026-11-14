@@ -127,7 +127,9 @@ def split_allowed(merchandise: Decimal) -> bool:
     return merchandise > SPLIT_PAYMENT_ABOVE
 
 
-def quantity_error(quantity: int) -> str | None:
+def quantity_error(quantity: int, stock: int) -> str | None:
     if quantity < QUANTITY_MIN or quantity > QUANTITY_MAX:
         return f"A quantidade precisa ficar entre {QUANTITY_MIN} e {QUANTITY_MAX}."
+    if quantity > stock:
+        return f"Há {stock} em estoque. Posso cotar até {stock}."
     return None

@@ -62,6 +62,16 @@ def test_incomplete_contact_does_not_count() -> None:
     assert identity.failed_verifications == 0
 
 
+def test_quote_refuses_more_than_the_stock() -> None:
+    gd20 = _product("GD20")
+    stock = gd20.details.stock
+    allowed = quote_text(gd20, stock, PAYMENT_PIX, 1, True, Ledger())
+    assert f"product_id={gd20.product_id}" in allowed
+    refused = quote_text(gd20, stock + 1, PAYMENT_PIX, 1, True, Ledger())
+    assert "product_id" not in refused
+    assert str(stock) in refused
+
+
 def test_promo_quote_shows_the_original_price_and_the_percent() -> None:
     ht = _product("HT-100")
     text = quote_text(ht, 1, PAYMENT_PIX, 1, True, Ledger())

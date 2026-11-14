@@ -34,7 +34,7 @@ def quote_text(
     in_city: bool,
     ledger: Ledger,
 ) -> str:
-    error = quantity_error(quantity)
+    error = quantity_error(quantity, product.details.stock)
     if error:
         return error
     unit = effective_price(product)
