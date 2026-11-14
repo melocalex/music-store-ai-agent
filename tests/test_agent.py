@@ -2,15 +2,17 @@
 
 import asyncio
 from datetime import date
+from decimal import Decimal
 
 import pytest
+from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models import infer_model
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
-from music_store_agent.agent import build_agent, model_id
+from music_store_agent.agent import _money, build_agent, model_id
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
     DEFAULT_MODEL,
@@ -124,3 +126,10 @@ def _deps(tmp_path):
         handoff_path=tmp_path / "handoffs.jsonl",
         usage_path=tmp_path / "turns.json",
     )
+
+
+def test_budget_text_is_parsed_and_nonsense_asks_for_a_retry() -> None:
+    assert _money("R$ 1.000") == Decimal("1000.00")
+    assert _money(" ") is None
+    with pytest.raises(ModelRetry):
+        _money("mil e poucos")

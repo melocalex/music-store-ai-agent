@@ -209,4 +209,7 @@ def _handoff(ctx: RunContext[Deps], reason: str, summary: str) -> None:
 def _money(raw: str | None) -> Decimal | None:
     if raw is None or not str(raw).strip():
         return None
-    return parse_amount(raw)
+    try:
+        return parse_amount(raw)
+    except ValueError as error:
+        raise ModelRetry("max_price precisa ser um valor em reais, por exemplo 1000.") from error
