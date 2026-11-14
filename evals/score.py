@@ -34,7 +34,7 @@ def score_case(case: dict[str, Any], transcript: list[dict[str, Any]]) -> list[s
 def _turn(expect: dict[str, Any], actual: dict[str, Any]) -> list[str]:
     reply = str(actual.get("reply", ""))
     problems: list[str] = []
-    if reply == SAFE_PRICE_MESSAGE and not expect.get("fallback", False):
+    if reply.startswith(SAFE_PRICE_MESSAGE) and not expect.get("fallback", False):
         problems.append("fell back to the price-check message")
     problems.extend(_tools(expect.get("tools", []), actual.get("calls", [])))
     problems.extend(_tool_text(expect.get("tool_text", {}), actual.get("returns", [])))

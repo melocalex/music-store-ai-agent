@@ -122,4 +122,4 @@ Each rejection counts as a firing, retries included. A turn counts once as a tru
 
 ## Local writes
 
-`var/handoffs.jsonl` gets a row from `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback. `var/daily_turns.json` holds the daily counter, written under a lock with `os.replace`. Both are gitignored, and neither holds an email or a phone.
+`var/handoffs.jsonl` gets a row from `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback. A row carries the store-clock time, the real time it was written, the conversation's protocol, and the confirmed customer and order ids when known. `var/daily_turns.json` holds the daily counter, written under a lock with `os.replace`. Both are gitignored, and neither holds an email or a phone.

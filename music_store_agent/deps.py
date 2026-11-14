@@ -5,9 +5,10 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from uuid import uuid4
 
 from music_store_agent.clock import Clock, clock_at, pinned_clock, pinned_day, real_clock
-from music_store_agent.constants import CLOCK_ENV, REAL_CLOCK_VALUE, TODAY_ENV
+from music_store_agent.constants import CLOCK_ENV, PROTOCOL_LENGTH, REAL_CLOCK_VALUE, TODAY_ENV
 from music_store_agent.db import last_order_date
 from music_store_agent.ledger import Ledger
 from music_store_agent.orders import Identity
@@ -28,6 +29,11 @@ class Counters:
     caught_turns: set[str] = field(default_factory=set)
 
 
+def new_protocol() -> str:
+    """A short id for one conversation, quoted by the visitor on WhatsApp and kept in handoffs."""
+    return uuid4().hex[:PROTOCOL_LENGTH].upper()
+
+
 @dataclass
 class Deps:
     conn: sqlite3.Connection
@@ -36,6 +42,7 @@ class Deps:
     paths: StorePaths
     identity: Identity
     counters: Counters = field(default_factory=Counters)
+    protocol: str = field(default_factory=new_protocol)
 
 
 def make_deps(

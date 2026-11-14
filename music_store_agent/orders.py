@@ -81,6 +81,7 @@ class Identity:
     """`failed_verifications` counts the whole session. A success does not reset it."""
 
     verified_customer_id: int | None = None
+    verified_order_id: int | None = None
     failed_verifications: int = 0
     sender_phone: str | None = None
     locked: bool = False
@@ -151,6 +152,7 @@ def verify(
     if not (phone_ok or (email_ok and not shared)):
         return _fail(identity)
     identity.verified_customer_id = order.customer_id
+    identity.verified_order_id = order.order_id
     return f"Pedido {order.order_id} confirmado para {order.buyer.first_name}."
 
 

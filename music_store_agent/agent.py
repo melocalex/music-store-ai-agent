@@ -46,7 +46,7 @@ from music_store_agent.constants import (
 from music_store_agent.deps import Deps
 from music_store_agent.failover import model_chain, request_settings, shared_breaker
 from music_store_agent.guard import AgentReply, grounding_gap
-from music_store_agent.handoff import reply_window, write_handoff
+from music_store_agent.handoff import HandoffCase, follow_up, reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
 from music_store_agent.ledger import manual_kind
 from music_store_agent.orders import explain_after_sales, read_order, verify
@@ -292,6 +292,7 @@ def verify_customer(
     text = verify(identity, ctx.deps.conn, order_id, email, phone)
     if identity.locked and not was_locked:
         _handoff(ctx, "verification_failed", "Confirmação falhou após as tentativas permitidas.")
+        return f"{text} {_follow_up(ctx)}"
     return text
 
 
@@ -314,7 +315,8 @@ def explain_order_policy(ctx: RunContext[Deps], order_id: int, open_request: boo
     if not (open_request and result.open_to_request):
         return result.text
     _handoff(ctx, "return_request", f"Pedido {order_id}: cliente pediu troca ou devolução.")
-    return f"{result.text}\nRegistrei o pedido para a equipe. {reply_window(deps.clock.now())}"
+    window = reply_window(deps.clock.now())
+    return f"{result.text}\nRegistrei o pedido para a equipe. {window} {_follow_up(ctx)}"
 
 
 def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:
@@ -341,17 +343,27 @@ def handoff_to_human(ctx: RunContext[Deps], reason: HandoffReason, summary: str)
         summary: One line for the team, without email or phone.
     """
     _handoff(ctx, reason, summary)
-    return f"Registrei o encaminhamento para a equipe. {reply_window(ctx.deps.clock.now())}"
+    window = reply_window(ctx.deps.clock.now())
+    return (
+        f"Registrei o encaminhamento para a equipe, protocolo {ctx.deps.protocol}. "
+        f"{window} {_follow_up(ctx)}"
+    )
 
 
 def _handoff(ctx: RunContext[Deps], reason: str, summary: str) -> None:
-    write_handoff(
-        ctx.deps.paths.handoff,
-        ctx.deps.clock.now(),
+    deps = ctx.deps
+    case = HandoffCase(
         reason,
         summary,
-        ctx.deps.identity.verified_customer_id,
+        deps.protocol,
+        deps.identity.verified_customer_id,
+        deps.identity.verified_order_id,
     )
+    write_handoff(deps.paths.handoff, deps.clock.now(), case)
+
+
+def _follow_up(ctx: RunContext[Deps]) -> str:
+    return follow_up(ctx.deps.identity.verified_order_id, ctx.deps.protocol)
 
 
 def _shown(ctx: RunContext[Deps], text: str) -> str:
