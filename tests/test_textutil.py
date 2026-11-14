@@ -10,6 +10,7 @@ from music_store_agent.textutil import (
     code_tokens,
     description_conflicts,
     emails_match,
+    mask_pii,
     parse_amount,
     percents_in_text,
     phones_match,
@@ -92,3 +93,12 @@ def test_brand_conflict_is_a_rule() -> None:
     assert description_conflicts("Tagima TW-55", "Um baixo Giannini de 4 cordas")
     assert not description_conflicts("Yamaha C40", "Violão clássico Yamaha")
     assert "takamine" in brands_in("Takamine GD20")
+
+
+def test_mask_pii_hides_contacts_and_keeps_other_numbers() -> None:
+    masked = mask_pii("Lucas, lucas.mendes@jmail.com, (67) 99812-3456, +55 67 99812-3456")
+    assert "@" not in masked
+    assert "99812" not in masked
+    assert masked.count("[phone]") == 2
+    kept = "Pedido 12345, rastreio BRAB1234567BR, data 2026-03-23, R$ 1.749,00, 6x"
+    assert mask_pii(kept) == kept

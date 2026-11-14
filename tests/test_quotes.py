@@ -74,3 +74,10 @@ def test_installment_quote_puts_the_leftover_cents_in_the_first_parcel() -> None
     assert format_brl(parcels.rest) in text
     assert format_brl(parcels.first) in text
     assert ledger.product_has(c40.product_id, parcels.first)
+
+
+def test_unknown_payment_is_named_and_not_priced() -> None:
+    ledger = Ledger()
+    text = quote_text(_product("C40"), 1, "bitcoin", 1, True, ledger)
+    assert "Forma de pagamento desconhecida" in text
+    assert "bitcoin" not in text.split("\n")[0]
