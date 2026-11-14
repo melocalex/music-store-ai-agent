@@ -22,7 +22,7 @@ from music_store_agent.constants import (
     VERIFICATION_LOCKED,
 )
 from music_store_agent.db import customers_with_email, fetch_order, fetch_order_items
-from music_store_agent.ledger import Ledger
+from music_store_agent.ledger import ORDER_TOTAL, Ledger
 from music_store_agent.textutil import emails_match, fold, format_amount, format_brl, phones_match
 
 _STATUS_LABELS = {
@@ -176,7 +176,7 @@ def read_order(
 
 
 def _public_order(order: OrderRecord, today: date, ledger: Ledger) -> str:
-    ledger.add_policy(order.pay.total)
+    ledger.add_policy(order.pay.total, ORDER_TOTAL)
     total = order.pay.total
     lines = [
         f"Pedido {order.order_id} de {order.buyer.first_name}. Cidade: {order.buyer.city}.",

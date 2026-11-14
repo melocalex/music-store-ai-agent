@@ -9,8 +9,9 @@ Every value below is a named constant in `music_store_agent/constants.py`, and a
 | Prices come from tools | The prompt asks for it, and the price check enforces it on every reply |
 | Common money forms count | `R$ 1.749,00`, `R$ 1.749`, `1.749,00`, `1,749.00`, `BRL 599,90`, `599,90 reais`, `99,98`, `12x de 50`, `2,2 mil`, `R$ 2,2 mil`, `600 conto`, and "quinhentos e noventa e nove reais e noventa centavos" are read as amounts. Dates, phones, order numbers, counts, measures such as `3,50 kg`, versions such as `versão 2.10`, and a dotted decimal with no currency such as `9.00` are not |
 | Product values use the product id | price, PIX, line total, and installment |
-| Rule values use a null id | freight, a floor, a stored order total, the customer's budget as echoed by the search |
+| Rule values use a null id | freight, a floor, a threshold, a stored order total, each tagged with its kind. The customer's budget, echoed by the search, is kept apart and is never a store value |
 | A price stays with its product | a sentence that names catalog products may only carry prices quoted for one of them |
+| A rule value keeps its kind | in a sentence that names a product, a null-id amount needs a word of its kind: `frete` for freight, `mínima` for a floor, `acima` for a threshold, `total` or `pedido` for an order total, `até` or `teto` for the budget. "O Shelby SU-21S custa R$ 35,00" is refused; "o frete do SU-21S é R$ 35,00" passes |
 | Percents come from tools | a percent in the reply must appear in tool text |
 | Failure | two retries, then a short message with no amount and a `price_check` handoff |
 

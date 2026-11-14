@@ -2,7 +2,14 @@
 
 from decimal import Decimal
 
-from music_store_agent.catalog import effective_price, find_products, is_sellable, load_catalog
+from music_store_agent.catalog import (
+    CatalogQuery,
+    effective_price,
+    find_products,
+    is_sellable,
+    load_catalog,
+    search_catalog,
+)
 from music_store_agent.constants import (
     FREIGHT_FLAT,
     FREIGHT_FREE_FROM,
@@ -12,7 +19,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.guard import AgentReply, PriceQuote, grounding_gap
-from music_store_agent.ledger import Ledger
+from music_store_agent.ledger import FLOOR, FREIGHT, ORDER_TOTAL, Ledger, manual_kind
 from music_store_agent.money import split_parcels
 from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import format_brl
@@ -113,7 +120,7 @@ def test_amount_must_sit_next_to_its_own_product() -> None:
 
 def test_policy_values_use_a_null_id_and_prices_use_the_product() -> None:
     ledger = _ledger()
-    ledger.add_policy(FREIGHT_FLAT)
+    ledger.add_policy(FREIGHT_FLAT, FREIGHT)
     freight = grounding_gap("Frete R$ 35,00.", [PriceQuote(amount=FREIGHT_FLAT)], ledger)
     assert freight.ok
     as_rule = grounding_gap("O C40 custa R$ 599,90.", [PriceQuote(amount=C40)], ledger)
@@ -121,6 +128,53 @@ def test_policy_values_use_a_null_id_and_prices_use_the_product() -> None:
     on_product = [PriceQuote(product_id=81, amount=FREIGHT_FLAT)]
     as_price = grounding_gap("Frete R$ 35,00.", on_product, ledger)
     assert not as_price.ok
+
+
+def test_the_customer_budget_is_not_a_price_for_a_named_product() -> None:
+    products = load_catalog(load_database())
+    ledger = Ledger()
+    search_catalog(products, CatalogQuery("violão", max_price=Decimal("10")), ledger)
+    budget = Decimal("10.00")
+    assert ledger.budgets == {budget}
+    assert ledger.policy == {}
+    assert ledger.rule_kinds(budget) == {"budget"}
+    names = {product.product_id: product.name for product in products}
+    rule = [PriceQuote(amount=budget)]
+    assert not grounding_gap("O Yamaha C40 custa R$ 10,00.", rule, ledger, names).ok
+    assert grounding_gap("Até R$ 10,00 não encontrei violões.", rule, ledger, names).ok
+    roomy = Ledger()
+    search_catalog(products, CatalogQuery("violão", max_price=Decimal("1000")), roomy)
+    quotes = [PriceQuote(amount=Decimal("1000")), PriceQuote(product_id=81, amount=C40)]
+    text = "Até R$ 1.000,00, o Yamaha C40 sai por R$ 599,90."
+    assert grounding_gap(text, quotes, roomy, names).ok
+
+
+def test_a_rule_value_cannot_pose_as_a_product_price() -> None:
+    products = load_catalog(load_database())
+    shelby = find_products(products, "SU-21S")[0]
+    names = {shelby.product_id: shelby.name}
+    ledger = Ledger()
+    quote_text(shelby, 1, PAYMENT_DEBIT, 1, True, ledger)
+    assert ledger.rule_kinds(FREIGHT_FLAT) == {"freight"}
+    freight = [PriceQuote(amount=FREIGHT_FLAT)]
+    assert not grounding_gap("O Shelby SU-21S custa R$ 35,00.", freight, ledger, names).ok
+    good = "O frete do Shelby SU-21S em Campo Grande é R$ 35,00."
+    assert grounding_gap(good, freight, ledger, names).ok
+    ledger.add_policy(Decimal("159.90"), ORDER_TOTAL)
+    total = [PriceQuote(amount=Decimal("159.90"))]
+    assert not grounding_gap("O Shelby SU-21S custa R$ 159,90.", total, ledger, names).ok
+    order = "O pedido 7, com 1x Shelby SU-21S, tem total gravado de R$ 159,90."
+    assert grounding_gap(order, total, ledger, names).ok
+
+
+def test_manual_amounts_carry_their_kind() -> None:
+    assert manual_kind(FREIGHT_FLAT) == FREIGHT
+    assert manual_kind(Decimal("100")) == FLOOR
+    ledger = _ledger()
+    ledger.add_policy(Decimal("100"), manual_kind(Decimal("100")))
+    floor = [PriceQuote(amount=Decimal("100"))]
+    assert not grounding_gap("O C40 custa R$ 100,00.", floor, ledger).ok
+    assert grounding_gap("Para o C40 em 10x, a parcela mínima é R$ 100,00.", floor, ledger).ok
 
 
 def test_quote_lines_pass_with_the_prompt_convention() -> None:

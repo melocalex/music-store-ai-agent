@@ -249,7 +249,7 @@ def search_catalog(products: tuple[Product, ...], request: CatalogQuery, ledger:
     text = _page(ordered, request.offset, ledger, chosen)
     if request.max_price is None:
         return text
-    ledger.add_policy(request.max_price)
+    ledger.add_budget(request.max_price)
     ceiling = f"amount={format_amount(request.max_price)} {format_brl(request.max_price)}"
     return f"Teto pedido pelo cliente: product_id=null {ceiling}.\n{text}"
 

@@ -47,6 +47,7 @@ from music_store_agent.failover import model_chain, request_settings, shared_bre
 from music_store_agent.guard import AgentReply, grounding_gap
 from music_store_agent.handoff import reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
+from music_store_agent.ledger import manual_kind
 from music_store_agent.orders import explain_after_sales, read_order, verify
 from music_store_agent.policies import PolicySection, load_manual, sections_text
 from music_store_agent.prompts import INSTRUCTIONS
@@ -245,7 +246,7 @@ def consult_policy(ctx: RunContext[Deps], sections: list[PolicySection]) -> str:
     """Return whole policy sections. Use the section name, not a search query."""
     text = sections_text(list(sections), _MANUAL)
     for amount in amounts_in_text(text):
-        ctx.deps.ledger.add_policy(amount)
+        ctx.deps.ledger.add_policy(amount, manual_kind(amount))
     return _shown(ctx, text)
 
 
