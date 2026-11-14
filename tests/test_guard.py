@@ -57,6 +57,14 @@ def test_slang_parcels_and_thousands_are_checked_like_any_amount() -> None:
     assert grounding_gap("O C40 sai em 12x sem juros.", [], ledger).ok
 
 
+def test_a_weight_or_version_next_to_a_price_does_not_fail_the_reply() -> None:
+    ledger = _ledger()
+    quotes = [PriceQuote(product_id=81, amount=C40)]
+    text = "O C40 pesa 3,50 kg, firmware versão 2.10, e custa R$ 599,90."
+    assert grounding_gap(text, quotes, ledger).ok
+    assert not grounding_gap("O C40 pesa 3,50 kg e custa 3,50.", quotes, ledger).ok
+
+
 def test_amount_must_sit_next_to_its_own_product() -> None:
     ledger = _ledger()
     other = [PriceQuote(product_id=82, amount=C70)]

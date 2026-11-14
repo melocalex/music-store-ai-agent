@@ -78,6 +78,14 @@ _NUMBER_WORDS = set(_UNITS) | set(_TENS) | set(_HUNDREDS) | set(_SCALES) | {"e"}
 _NUMBER = r"\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
 _CURRENCY = r"R\$|BRL|US\$|\$"
 _UNIT_WORDS = r"reais|real|BRL|contos?"
+# A number with no currency is money only in a money layout: 1.749,00 or 99,98 in pt-BR, or
+# 1,749.00 in English. "9.00" and "2.10" are not, and neither is a measure such as "3,50 kg".
+_BARE = r"\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}"
+_MEASURE_AFTER = (
+    r"\s*(?:(?:kg|mg|g|cm|mm|km|m|ml|l|pol|polegadas|h|hs|horas|min|w|kw|v|hz|khz|db)"
+    r"(?![a-zà-ú])|%|\"|”)"
+)
+_VERSION_BEFORE = re.compile(r"(?:vers[aã]o|version|firmware|revis[aã]o)\s*$", re.IGNORECASE)
 # "R$ 2,2 mil" and "2,2 mil" are thousands, "12x de 50" is a parcel, "600 conto" is slang for
 # reais. Each form is one alternative, so a number is read once, with its scale.
 _MONEY = re.compile(
@@ -85,7 +93,7 @@ _MONEY = re.compile(
     rf"|(?<![\d.,])(?P<kilo>\d+(?:[.,]\d{{1,2}})?)\s*mil\b(?:\s*(?:{_UNIT_WORDS})\b)?"
     rf"|(?<![\w.,])\d{{1,2}}\s*x\s+de\s+(?P<parcel>{_NUMBER})(?![\d.,]*\d)(?!\s*%)"
     rf"|(?<![\d.,])(?P<suf>{_NUMBER})\s*(?:{_UNIT_WORDS})\b"
-    rf"|(?<![\d.,])(?P<bare>\d{{1,3}}(?:[.,]\d{{3}})+[.,]\d{{2}}|\d+[.,]\d{{2}})(?![\d.,]*\d)",
+    rf"|(?<![\w.,])(?P<bare>{_BARE})(?![\d.,]*\d)(?!{_MEASURE_AFTER})",
     re.IGNORECASE,
 )
 _AMOUNT_GROUPS = ("pre", "kilo", "parcel", "suf", "bare")
@@ -181,6 +189,8 @@ def _split_decimal(token: str) -> tuple[str, str, str]:
 def amounts_in_text(text: str) -> set[Decimal]:
     found: set[Decimal] = set()
     for match in _MONEY.finditer(text):
+        if match.group("bare") and _VERSION_BEFORE.search(text, 0, match.start()):
+            continue
         token = next(match.group(name) for name in _AMOUNT_GROUPS if match.group(name))
         value = _number_value(token)
         if match.group("pre_mil") or match.group("kilo"):

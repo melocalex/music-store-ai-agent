@@ -116,6 +116,27 @@ def test_parcels_thousands_and_slang_are_amounts() -> None:
     assert amounts_in_text("12x de 5% ao mês") == set()
 
 
+def test_measures_versions_and_dotted_decimals_are_not_money() -> None:
+    for text in (
+        "Pesa 3,50 kg.",
+        "Abre às 9.00 e fecha às 18.00.",
+        "Firmware na versão 2.10.",
+        "versão 2,10",
+        "Desconto de 5,00%.",
+        "Corpo de 39,5 cm e escala de 65,00 cm.",
+    ):
+        assert amounts_in_text(text) == set(), text
+    for text, amount in (
+        ("O violão sai por 1.749,00 no PIX.", "1749.00"),
+        ("6x de 99,98", "99.98"),
+        ("It is 1,749.00 by PIX.", "1749.00"),
+        ("R$ 9.00", "9.00"),
+        ("9,00 reais", "9.00"),
+        ("99,98 mensais", "99.98"),
+    ):
+        assert amounts_in_text(text) == {Decimal(amount)}, text
+
+
 def test_mask_pii_hides_contacts_and_keeps_other_numbers() -> None:
     masked = mask_pii("Lucas, lucas.mendes@jmail.com, (67) 99812-3456, +55 67 99812-3456")
     assert "@" not in masked
