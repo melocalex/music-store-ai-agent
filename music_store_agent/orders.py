@@ -143,7 +143,9 @@ def verify(
     email_ok = bool(email) and emails_match(order.buyer.email, email or "")
     phone_ok = any(phones_match(order.buyer.phone, given) for given in phones)
     shared = email_ok and customers_with_email(conn, order.buyer.email) > 1
-    if shared and not phones:
+    # A shared e-mail needs a phone the customer typed. A sender phone that is not the owner's
+    # is not a wrong answer, so it does not cost an attempt.
+    if shared and not phone_ok and not phone:
         return ASK_PHONE
     if not (phone_ok or (email_ok and not shared)):
         return _fail(identity)

@@ -95,6 +95,17 @@ def test_shared_email_needs_the_phone_of_that_order() -> None:
     assert read_order(identity, conn, 1, TODAY, Ledger()) == NOT_YOUR_ORDER
 
 
+def test_a_shared_email_with_another_sender_phone_asks_for_the_phone() -> None:
+    conn = load_database()
+    identity = Identity(sender_phone=LUCAS_PHONE)
+    assert verify(identity, conn, 10, SHARED_EMAIL, None) == ASK_PHONE
+    assert identity.failed_verifications == 0
+    assert verify(identity, conn, 10, SHARED_EMAIL, BRUNO_43_PHONE) == VERIFICATION_FAILED
+    assert identity.failed_verifications == 1
+    owner = Identity(sender_phone=BRUNO_11_PHONE)
+    assert "Bruno" in verify(owner, conn, 10, SHARED_EMAIL, None)
+
+
 def test_order_tools_refuse_before_verification() -> None:
     conn = load_database()
     identity = Identity()
