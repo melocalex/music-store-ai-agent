@@ -1,10 +1,14 @@
-"""Store clock in America/Campo_Grande, pinned to the day after the last order."""
+"""Store clock in America/Campo_Grande, pinned to the day after the last order by default."""
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from music_store_agent.constants import (
+    CLOCK_FIXED,
+    CLOCK_LABELS,
+    CLOCK_PINNED,
+    CLOCK_REAL,
     FIXED_HOLIDAYS,
     HOLIDAY_LOOKAHEAD_DAYS,
     PINNED_DAY_OFFSET,
@@ -19,14 +23,27 @@ from music_store_agent.constants import (
 )
 
 STORE_ZONE = ZoneInfo(STORE_TIMEZONE)
+WEEKDAY_NAMES = (
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+)
 
 
 @dataclass(frozen=True)
 class Clock:
-    """`moment` None means the real clock. Otherwise the instant is fixed."""
+    """`moment` None means the real clock. Otherwise the instant is fixed.
+
+    `mode` is pinned (the day after the last order), fixed (a date chosen by the operator),
+    or real.
+    """
 
     moment: datetime | None
-    pinned: bool
+    mode: str
 
     def now(self) -> datetime:
         if self.moment is None:
@@ -36,18 +53,30 @@ class Clock:
     def today(self) -> date:
         return self.now().date()
 
+    @property
+    def label(self) -> str:
+        return CLOCK_LABELS[self.mode]
+
 
 def pinned_day(last_order: date) -> date:
     return last_order + timedelta(days=PINNED_DAY_OFFSET)
 
 
-def clock_at(day: date, at: time = REFERENCE_TIME, *, pinned: bool) -> Clock:
+def clock_at(day: date, at: time = REFERENCE_TIME, *, mode: str = CLOCK_FIXED) -> Clock:
     moment = datetime.combine(day, at, tzinfo=STORE_ZONE)
-    return Clock(moment=moment, pinned=pinned)
+    return Clock(moment=moment, mode=mode)
+
+
+def pinned_clock(last_order: date) -> Clock:
+    return clock_at(pinned_day(last_order), mode=CLOCK_PINNED)
 
 
 def real_clock() -> Clock:
-    return Clock(moment=None, pinned=False)
+    return Clock(moment=None, mode=CLOCK_REAL)
+
+
+def weekday_name(day: date) -> str:
+    return WEEKDAY_NAMES[day.weekday()]
 
 
 def holiday_name(day: date) -> str | None:
@@ -63,12 +92,20 @@ def hours_for(day: date) -> tuple[time, time]:
     return WEEKDAY_OPEN, WEEKDAY_CLOSE
 
 
-def closed_reason(day: date, at: time) -> str | None:
+def day_closed_reason(day: date) -> str | None:
+    """Closed all day: a fixed holiday or a Sunday."""
     name = holiday_name(day)
     if name is not None:
         return name
     if day.weekday() == SUNDAY:
-        return "domingo"
+        return WEEKDAY_NAMES[SUNDAY]
+    return None
+
+
+def closed_reason(day: date, at: time) -> str | None:
+    whole_day = day_closed_reason(day)
+    if whole_day is not None:
+        return whole_day
     start, end = hours_for(day)
     if at < start or at > end:
         return "fora do expediente"
@@ -81,13 +118,13 @@ def is_open_at(moment: datetime) -> bool:
 
 
 def next_opening_label(day: date, at: time) -> str:
-    if holiday_name(day) is None and day.weekday() != SUNDAY:
+    if day_closed_reason(day) is None:
         start, _end = hours_for(day)
         if at < start:
             return f"{day.isoformat()} {start.strftime('%H:%M')}"
     cursor = day + timedelta(days=1)
     for _ in range(HOLIDAY_LOOKAHEAD_DAYS):
-        if holiday_name(cursor) is None and cursor.weekday() != SUNDAY:
+        if day_closed_reason(cursor) is None:
             start, _end = hours_for(cursor)
             return f"{cursor.isoformat()} {start.strftime('%H:%M')}"
         cursor += timedelta(days=1)

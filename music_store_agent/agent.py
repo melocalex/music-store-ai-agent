@@ -16,6 +16,7 @@ from music_store_agent.catalog import (
     load_catalog,
     search_catalog,
 )
+from music_store_agent.clock import weekday_name
 from music_store_agent.constants import (
     DEFAULT_MODEL,
     DESTINATION_CITY,
@@ -87,8 +88,9 @@ def _register(agent: Agent[Deps, AgentReply]) -> None:
 def reference_day(ctx: RunContext[Deps]) -> str:
     """Reference date injected on every turn."""
     clock = ctx.deps.clock
-    kind = "fixo, um dia após o último pedido" if clock.pinned else "relógio real"
-    return f"Data de referência: {clock.today().isoformat()} ({kind}). Use só esta data."
+    now = clock.now()
+    when = f"{weekday_name(now.date())}, {now.date().isoformat()} {now.strftime('%H:%M')}"
+    return f"Data de referência: {when} ({clock.label}). Use só esta data."
 
 
 def validate_reply(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
@@ -226,10 +228,14 @@ def explain_order_policy(ctx: RunContext[Deps], order_id: int, open_request: boo
 
 
 def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:
-    """Say if the store is open. Pass YYYY-MM-DD or DD/MM for a specific day, including holidays."""
+    """Hours of one day, holidays included, and whether the store is open right now.
+
+    Args:
+        day: YYYY-MM-DD or DD/MM. Leave empty for today.
+    """
     asked = parse_asked_day(day, ctx.deps.clock.today())
     if day and asked is None:
-        return "Não entendi a data. Use AAAA-MM-DD."
+        return "Não entendi a data. Use AAAA-MM-DD ou DD/MM."
     return hours_answer(ctx.deps.clock.now(), asked)
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from music_store_agent.clock import Clock, clock_at, pinned_day, real_clock
+from music_store_agent.clock import Clock, clock_at, pinned_clock, pinned_day, real_clock
 from music_store_agent.constants import CLOCK_ENV, REAL_CLOCK_VALUE, TODAY_ENV
 from music_store_agent.db import last_order_date
 from music_store_agent.ledger import Ledger
@@ -54,14 +54,14 @@ def make_deps(
 
 
 def build_clock(conn: sqlite3.Connection, *, today: date | None, real: bool) -> Clock:
-    if today is not None:
-        return clock_at(today, pinned=False)
-    if real or _env_real():
+    """Pinned by default. A chosen date is fixed, unless it is the pinned day itself."""
+    last = last_order_date(conn)
+    chosen = today if today is not None else _env_today()
+    if chosen is None and (real or _env_real()):
         return real_clock()
-    override = _env_today()
-    if override is not None:
-        return clock_at(override, pinned=False)
-    return clock_at(pinned_day(last_order_date(conn)), pinned=True)
+    if chosen is None or chosen == pinned_day(last):
+        return pinned_clock(last)
+    return clock_at(chosen)
 
 
 def _env_real() -> bool:
