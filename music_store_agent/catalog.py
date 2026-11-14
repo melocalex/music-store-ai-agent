@@ -86,6 +86,7 @@ _SPEC_TAGS = {
     ("strings", "steel"): ("steel",),
 }
 _EXPENSIVE = frozenset({"caro", "cara", "caros", "expensive", "top"})
+_SORT_WORDS = _EXPENSIVE | {"barato", "barata", "baratos", "baratas", "cheap", "cheapest"}
 _STATE_LABELS = {
     STATE_AVAILABLE: "disponível",
     STATE_OUT_OF_STOCK: "sem estoque agora",
@@ -113,7 +114,9 @@ _SPEC_VALUES = {"yes": "sim", "no": "não", "steel": "aço", "included": "inclus
 _STOP = frozenset(
     "a o os as de do da das dos um uma e ou com sem para por em no na ate the an of to up under "
     "over me my is how much what which any algum alguma quais qual tem voce voces quero preco "
-    "custa disponivel disponiveis ateh porfavor".split()
+    "custa disponivel disponiveis ateh porfavor opcao opcoes custando custam quanto quantos "
+    "modelo modelos mais menos bom boa melhor melhores vende vendem procuro procurando busco "
+    "mostre mostrar liste listar gostaria loja instrumento instrumentos show list".split()
 )
 _WIND_NAMES = frozenset({"Instrumentos de Sopro (Madeiras)", "Instrumentos de Sopro (Metais)"})
 
@@ -244,14 +247,24 @@ def search_catalog(products: tuple[Product, ...], request: CatalogQuery, ledger:
     chosen, tokens, conflict = _interpret(request.text, family)
     if conflict:
         return "Há mais de uma família nesse pedido. Diga se é violão, guitarra, baixo ou ukulele."
+    ignored = [token for token in tokens if token not in _vocabulary(products) | _SORT_WORDS]
+    if ignored and len(ignored) == len(tokens) and chosen is None:
+        return _not_in_catalog(products, ignored)
     matched = _filter(products, chosen, tokens, request.max_price, sellable_only=True)
     ordered = _sort(matched, _sort_order(request))
     text = _page(ordered, request.offset, ledger, chosen)
+    if ignored:
+        text += f"\nSem correspondência no catálogo, ignorei: {', '.join(ignored)}."
     if request.max_price is None:
         return text
     ledger.add_budget(request.max_price)
     ceiling = f"amount={format_amount(request.max_price)} {format_brl(request.max_price)}"
     return f"Teto pedido pelo cliente: product_id=null {ceiling}.\n{text}"
+
+
+def _not_in_catalog(products: tuple[Product, ...], words: list[str]) -> str:
+    families = ", ".join(sorted({product.category for product in products if is_sellable(product)}))
+    return f"Não encontrei {' '.join(words)} no catálogo. Famílias à venda: {families}."
 
 
 def resolve_category(raw: str, products: tuple[Product, ...]) -> str | None:

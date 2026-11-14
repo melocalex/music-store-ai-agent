@@ -116,6 +116,27 @@ def test_words_outside_the_catalog_are_ignored_and_specs_count() -> None:
     assert "mais de uma família" not in cheap
 
 
+def test_a_search_with_no_catalog_word_says_so_and_lists_the_families() -> None:
+    products = _products()
+    for word in ("amplificador", "violino", "cavaquinho"):
+        ledger = Ledger()
+        text = search_catalog(products, CatalogQuery(word), ledger)
+        assert text.startswith(f"Não encontrei {word} no catálogo.")
+        assert "Violões" in text and "Ukuleles" in text
+        assert "Mostrando" not in text
+        assert ledger.by_product == {}
+
+
+def test_a_search_names_the_words_it_ignored() -> None:
+    products = _products()
+    violoes = sum(1 for p in products if p.category == "Violões" and is_sellable(p))
+    text = search_catalog(products, CatalogQuery("violão canhoto"), Ledger())
+    assert f"de {violoes}." in text
+    assert text.endswith("Sem correspondência no catálogo, ignorei: canhoto.")
+    for known in ("ukulele concert", "violão barato", "o violão mais caro"):
+        assert "ignorei" not in search_catalog(products, CatalogQuery(known), Ledger()), known
+
+
 def test_expensive_words_sort_from_the_top() -> None:
     products = _products()
     violoes = [p for p in products if p.category == "Violões" and is_sellable(p)]
