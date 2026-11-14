@@ -25,13 +25,13 @@ A live run needs the key described in [setup.md](setup.md).
 | 0 | every case passed |
 | 1 | at least one case failed |
 | 2 | no key for a live run |
-| 3 | the provider kept refusing and the run stopped; the partial report was saved |
+| 3 | the provider kept refusing, both models failed, or a turn passed 45 seconds; the run stopped and the partial report was saved |
 
 ## What each mode proves
 
 **Stub.** Each turn's `stub` block lists the tool calls and the reply a model would give. The runner sends them through the real tools, the real ledger, and the real price check, quoting amounts the way the prompt asks. The scorer then checks the `expect` block, which the stub never reads. A stub pass shows that the tools return the right facts and that the guard accepts a grounded reply. Tests in `tests/test_evals.py` show the other side: a stub reply with another product's price falls back and fails, and a wrong tool argument fails. The stub is not a model score.
 
-**Live.** The same prompts go to Gemini, and the same `expect` checks score the replies. A live run uses the same fallback and per-request timeout as the app, but not the 45-second turn budget, so a slow turn is measured rather than cut. A warning on stderr names every response the fallback gave, so a score can be checked against the model named in the report file. Keywords are folded for case and accents, arguments are compared by meaning (`"1000"` matches `"1.000,00"`, `"C40"` matches `"Yamaha C40"`, `"13/06"` matches `"2026-06-13"`), and amounts are parsed, so a reply can use its own words.
+**Live.** The same prompts go to Gemini, and the same `expect` checks score the replies. A live run uses the same fallback, per-request deadline, and 45-second turn budget as the app. A warning on stderr names every response the fallback gave, so a score can be checked against the model named in the report file. Keywords are folded for case and accents, arguments are compared by meaning (`"1000"` matches `"1.000,00"`, `"C40"` matches `"Yamaha C40"`, `"13/06"` matches `"2026-06-13"`), and amounts are parsed, so a reply can use its own words.
 
 ## Scenario format
 
@@ -76,7 +76,7 @@ Then one line per case with its failures.
 
 ## Results
 
-A live run writes `evals/results/<model>.md`, which is committed. A stub run writes `evals/results/stub.md`, which is gitignored. A 429 is retried after 10, 30, and 90 seconds, or after the delay the provider asks for. If it persists, or another provider error comes back, the run stops, the report ends with "Resume with --from <case>", and the exit code is 3.
+A live run writes `evals/results/<model>.md`, which is committed. A stub run writes `evals/results/stub.md`, which is gitignored. A 429 is retried after 10, 30, and 90 seconds, or after the delay the provider asks for. If it persists, another provider error comes back, both models fail, or a turn passes the 45-second budget, the run stops, the report ends with "Resume with --from <case>", and the exit code is 3.
 
 ## Scenarios
 
