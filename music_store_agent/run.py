@@ -33,7 +33,7 @@ from music_store_agent.constants import (
 from music_store_agent.deps import Deps
 from music_store_agent.failover import PrimaryBreakerOpen
 from music_store_agent.guard import AgentReply, PriceQuote
-from music_store_agent.handoff import write_handoff
+from music_store_agent.handoff import HandoffCase, follow_up, write_handoff
 from music_store_agent.usage import reserve
 
 _HTTP_TOO_MANY = 429
@@ -146,11 +146,14 @@ def error_label(error: BaseException) -> str:
 
 
 def _safe_price(deps: Deps, history: list[ModelMessage]) -> Turn:
-    write_handoff(
-        deps.paths.handoff,
-        deps.clock.now(),
+    identity = deps.identity
+    case = HandoffCase(
         "price_check",
         "A resposta citou um valor que nenhuma ferramenta devolveu.",
-        deps.identity.verified_customer_id,
+        deps.protocol,
+        identity.verified_customer_id,
+        identity.verified_order_id,
     )
-    return Turn(SAFE_PRICE_MESSAGE, (), tuple(history), limited=True)
+    write_handoff(deps.paths.handoff, deps.clock.now(), case)
+    message = f"{SAFE_PRICE_MESSAGE} {follow_up(identity.verified_order_id, deps.protocol)}"
+    return Turn(message, (), tuple(history), limited=True)

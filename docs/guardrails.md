@@ -91,12 +91,12 @@ An order that has not been delivered has not started the receipt windows. Aria n
 ## Privacy
 
 - Email and phone are masked in every shown message, in tool-call lines on the page, and in handoff rows.
-- Handoff rows hold a fixed reason, a capped summary, and the confirmed customer id. Message bodies are not logged.
+- Handoff rows hold a fixed reason, a capped summary, the conversation's protocol, the confirmed customer and order ids when there are any, the store-clock time, and the real time the row was written. Message bodies are not logged.
 - The model never receives a customer's email or phone from a tool.
 
 ## Scope and handoffs
 
-A rule can be explained. A purchase, cancellation, address change, return, complaint, discount request, or freight to another city is handed off with a reason from a fixed list. The reply says the team answers within 24 business hours and, when the store is closed, when it reopens.
+A rule can be explained. A purchase, cancellation, address change, return, complaint, discount request, or freight to another city is handed off with a reason from a fixed list. The reply says the team answers within 24 business hours and, when the store is closed, when it reopens. It also says how the team gets back: through the contact of a confirmed order, or, for a visitor who confirmed none, on WhatsApp with the conversation's protocol. The safe-price message carries the same line.
 
 ## Caps and failures
 

@@ -1,6 +1,7 @@
 """One scripted model turn exercises the tools and the price check."""
 
 import asyncio
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -40,12 +41,15 @@ from music_store_agent.constants import (
     SESSION_CAP_MESSAGE,
     SESSION_TURN_CAP,
     TURN_TIMEOUT_SECONDS,
+    WHATSAPP_PHONE,
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.failover import GuardedModel
 from music_store_agent.guard import AgentReply, grounding_gap
+from music_store_agent.handoff import follow_up
 from music_store_agent.ledger import Ledger
+from music_store_agent.orders import load_order, verify
 from music_store_agent.run import run_turn
 
 PINNED = date(2026, 3, 23)
@@ -218,10 +222,13 @@ def test_ungrounded_price_falls_back_without_the_amount(tmp_path) -> None:
     )
     agent = build_agent(FunctionModel(_ungrounded))
     turn = asyncio.run(run_turn(agent, deps, "desconto", [], 0))
-    assert turn.message == SAFE_PRICE_MESSAGE
+    assert turn.message == f"{SAFE_PRICE_MESSAGE} {follow_up(None, deps.protocol)}"
+    assert WHATSAPP_PHONE in turn.message and deps.protocol in turn.message
     assert "10,00" not in turn.message
     assert deps.counters.validator_catches >= 1
-    assert "price_check" in (tmp_path / "handoffs.jsonl").read_text(encoding="utf-8")
+    row = json.loads((tmp_path / "handoffs.jsonl").read_text(encoding="utf-8"))
+    assert row["reason"] == "price_check"
+    assert row["protocol"] == deps.protocol
 
 
 def test_an_invented_price_counts_one_catch_per_turn_across_retries(tmp_path) -> None:
@@ -252,6 +259,32 @@ def test_an_amount_a_tool_printed_is_not_a_catch() -> None:
     assert grounding_gap(reply.message, [], Ledger()).unknown == ("99.98", "100.00")
     made_up = AgentReply(message="Faço por R$ 10,00.")
     assert _invented(made_up, [shown]) == {Decimal("10.00")}
+
+
+def _hand_off(messages, _info):
+    if any(getattr(part, "part_kind", "") == "tool-return" for part in messages[-1].parts):
+        return _final("Encaminhei para a equipe.", [])
+    args = {"reason": "discount_request", "summary": "Cliente pediu desconto."}
+    return ModelResponse(parts=[ToolCallPart(tool_name="handoff_to_human", args=args)])
+
+
+def test_a_handoff_tells_the_visitor_how_the_team_will_reply(tmp_path) -> None:
+    visitor = _deps(tmp_path / "visitor")
+    asyncio.run(build_agent(FunctionModel(_hand_off)).run("desconto?", deps=visitor))
+    row = json.loads(visitor.paths.handoff.read_text(encoding="utf-8"))
+    assert row["protocol"] == visitor.protocol
+    assert row["order_id"] is None and row["verified_customer_id"] is None
+    assert row["logged_at"] != row["at"]
+    told = follow_up(None, visitor.protocol)
+    assert WHATSAPP_PHONE in told and visitor.protocol in told
+    customer = _deps(tmp_path / "customer")
+    order = load_order(customer.conn, 7)
+    verify(customer.identity, customer.conn, 7, order.buyer.email, None)
+    asyncio.run(build_agent(FunctionModel(_hand_off)).run("desconto?", deps=customer))
+    row = json.loads(customer.paths.handoff.read_text(encoding="utf-8"))
+    assert row["order_id"] == 7
+    assert row["verified_customer_id"] == order.customer_id
+    assert follow_up(7, customer.protocol) == "A equipe fala com você pelo contato do pedido 7."
 
 
 def test_session_cap_does_not_call_the_model(tmp_path) -> None:
@@ -300,7 +333,7 @@ def _crossed(messages, _info):
 def test_a_known_price_on_the_wrong_product_fires_without_a_catch(tmp_path) -> None:
     deps = _deps(tmp_path)
     turn = asyncio.run(run_turn(build_agent(FunctionModel(_crossed)), deps, "C40?", [], 0))
-    assert turn.message == SAFE_PRICE_MESSAGE
+    assert turn.message.startswith(SAFE_PRICE_MESSAGE)
     assert deps.counters.validator_firings >= 1
     assert deps.counters.validator_catches == 0
 
