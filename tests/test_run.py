@@ -1,9 +1,14 @@
 """Each kind of failure gets its own fixed message, and only a price failure hands off."""
 
 import asyncio
+import logging
 from datetime import date
 
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import (
+    ModelAuthenticationError,
+    ModelHTTPError,
+    ModelUnavailableError,
+)
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
@@ -20,6 +25,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
+from music_store_agent.failover import model_chain
 from music_store_agent.run import run_turn
 
 PINNED = date(2026, 3, 23)
@@ -95,3 +101,40 @@ def test_page_text_is_masked_and_dollar_signs_are_escaped(tmp_path) -> None:
     assert "@" not in shown
     turn, _ = _turn(tmp_path, _final)
     assert tool_lines(list(turn.new_messages)) == []
+
+
+def _bad_key(_messages, _info):
+    body = {"error": {"message": "API key not valid: AIzaSy-placeholder", "status": "INVALID"}}
+    raise ModelHTTPError.for_category(
+        ModelAuthenticationError, status_code=401, model_name="gemini-3.8-flash", body=body
+    )
+
+
+def _down(_messages, _info):
+    raise ModelHTTPError.for_category(
+        ModelUnavailableError, status_code=503, model_name="gemini-3.6-flash"
+    )
+
+
+def _warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "music_store_agent.run"]
+
+
+def test_each_failure_logs_its_type_and_status_without_the_body(tmp_path, caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="music_store_agent.run"):
+        key, _ = _turn(tmp_path / "key", _bad_key)
+        schema, _ = _turn(tmp_path / "schema", _plain_text)
+        deps = _deps(tmp_path / "both")
+        chain = model_chain(FunctionModel(_down), FunctionModel(_down))
+        both = asyncio.run(run_turn(build_agent(chain), deps, "oi", [], 0))
+    assert key.message == PROVIDER_ERROR_MESSAGE
+    assert schema.message == TURN_ERROR_MESSAGE
+    assert both.message == PROVIDER_ERROR_MESSAGE
+    assert _warnings(caplog) == [
+        "provider error: ModelAuthenticationError status=401 model=gemini-3.8-flash",
+        "turn failed: UnexpectedModelBehavior",
+        "no model answered: ModelUnavailableError status=503 model=gemini-3.6-flash, "
+        "ModelUnavailableError status=503 model=gemini-3.6-flash",
+    ]
+    assert "AIza" not in caplog.text
+    assert "not valid" not in caplog.text
