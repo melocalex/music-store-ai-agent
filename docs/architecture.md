@@ -45,13 +45,17 @@ sequenceDiagram
 | Primary | `MODEL` | `google:gemini-3.8-flash` |
 | Fallback | `MODEL_FALLBACK` | `google:gemini-3.6-flash` |
 
-Each model request goes to the primary under `request_timeout`, 20 seconds by default (`MODEL_TIMEOUT_SECONDS`), with provider SDK retries set to 0. An outage sends that same request to the fallback with a fresh timeout: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`. Any other error, such as a rate limit or a rejected request, is raised from the primary. When both models fail, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` answers with the provider message.
+Each model in the chain is a `GuardedModel` from `failover.py`. Its request runs in a task of its own under a hard deadline, 20 seconds by default (`MODEL_TIMEOUT_SECONDS`). At the deadline the task is cancelled and left behind, never awaited, and the wrapper raises `ModelRequestTimeout`, so a socket that ignores cancellation cannot hold the turn. The same value goes to the HTTP client as its timeout for each attempt, and provider SDK retries are set to 0. An outage sends that same request to the fallback with a fresh deadline: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`. Any other error, such as a rate limit or a rejected request, is raised from the primary. When both models fail, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` answers with the provider message.
 
-`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`). Two 20-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
+`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`), and the live eval runner uses the same one. Two 20-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
 
-The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning with the primary's error type for the fallback. The log holds model ids and error types only.
+### Circuit breaker
 
-A `Model` instance passed to `build_agent`, as the stub runs and the offline suite do, runs as given, without the fallback or the timeout.
+The primary's `GuardedModel` holds a `CircuitBreaker`, shared by every agent the process builds for that model id. An outage on the primary records its time. For `MODEL_BREAKER_SECONDS` after it, 300 by default, the primary refuses each request at once with `PrimaryBreakerOpen`, a `ModelUnavailableError`, so `FallbackModel` moves straight to the fallback, which gets the full deadline. The first request after the window calls the primary: a success closes the breaker, and an outage starts a new window. Rate limits, quotas, and rejected requests leave it alone. The breaker is in memory and per process, behind a lock, since Streamlit runs each session on its own thread.
+
+The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning for the fallback that says whether the primary failed, with its error type, or was skipped by the open breaker. `failover.py` logs a warning when the breaker opens and on each skip, and an info line when it closes. The log holds model ids and error types only.
+
+A `Model` instance passed to `build_agent`, as the stub runs and the offline suite do, runs as given, without the fallback, the deadline, or the breaker.
 
 ## Tools
 
@@ -76,7 +80,8 @@ Pydantic turns the `Literal` arguments into enums in the tool schema, so a value
 
 | Module | Holds |
 |---|---|
-| `agent.py` | the agent, the model chain, the model id and timeout checks, the tool wrappers, and the output validator |
+| `agent.py` | the agent, the model id, timeout, and breaker-window checks, the tool wrappers, and the output validator |
+| `failover.py` | the model chain: the outage list, the hard deadline, the circuit breaker, and the request settings |
 | `run.py` | one turn: caps, the turn deadline, the run, the failure messages, and the answering-model log |
 | `catalog.py` | product states, search, code matching, product text, promotions |
 | `quotes.py`, `money.py` | the offer text and the `Decimal` rules for PIX, installments, freight, and quantity |
