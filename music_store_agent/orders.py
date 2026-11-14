@@ -23,7 +23,13 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import customers_with_email, fetch_order, fetch_order_items
 from music_store_agent.ledger import ORDER_TOTAL, Ledger
-from music_store_agent.textutil import emails_match, fold, format_amount, format_brl, phones_match
+from music_store_agent.textutil import (
+    emails_match,
+    format_amount,
+    format_brl,
+    mask_pii,
+    phones_match,
+)
 
 _STATUS_LABELS = {
     "delivered": "entregue",
@@ -193,7 +199,7 @@ def _public_order(order: OrderRecord, today: date, ledger: Ledger) -> str:
             f"{status_label(order.pay.status)}."
         )
     if order.ship.notes.strip():
-        lines.append(f"Nota interna resumida: {_note(order.ship.notes)}")
+        lines.append(_note_line(order))
     lines.append("Não recalculo o total gravado.")
     return "\n".join(line for line in lines if line)
 
@@ -219,13 +225,11 @@ def is_late(order: OrderRecord, today: date) -> bool:
     return estimate is not None and order.pay.status in OPEN_DELIVERY_STATUSES and today > estimate
 
 
-def _note(notes: str) -> str:
-    folded = fold(notes)
-    if "venda final" in folded:
-        return "venda final"
-    if "setup" in folded or "regulagem" in folded:
-        return "setup ou regulagem"
-    return "há uma observação operacional"
+def _note_line(order: OrderRecord) -> str:
+    """Every stored note is a cancellation reason. Any other note is only flagged."""
+    if order.pay.status == ORDER_CANCELLED:
+        return f"Motivo do cancelamento gravado: {mask_pii(order.ship.notes.strip())}."
+    return "Há uma observação interna no pedido. A equipe detalha se for preciso."
 
 
 def explain_after_sales(
