@@ -100,29 +100,41 @@ def _args(raw: object) -> dict[str, Any]:
 
 def _tool_text(expect: dict[str, Any], returns: list[dict[str, Any]]) -> list[str]:
     blob = "\n".join(str(item.get("content", "")) for item in returns)
-    problems = [f"tool text missing {needle!r}" for needle in expect.get("contains", [])
-                if needle not in blob]
-    problems.extend(f"tool text has {needle!r}" for needle in expect.get("excludes", [])
-                    if needle in blob)
+    problems = [
+        f"tool text missing {needle!r}"
+        for needle in expect.get("contains", [])
+        if needle not in blob
+    ]
+    problems.extend(
+        f"tool text has {needle!r}" for needle in expect.get("excludes", []) if needle in blob
+    )
     return problems
 
 
 def _amounts(expect: dict[str, Any], reply: str) -> list[str]:
     found = amounts_in_text(reply)
-    problems = [f"reply lacks amount {value}" for value in expect.get("present", [])
-                if Decimal(str(value)) not in found]
-    problems.extend(f"reply carries amount {value}" for value in expect.get("absent", [])
-                    if Decimal(str(value)) in found)
+    problems = [
+        f"reply lacks amount {value}"
+        for value in expect.get("present", [])
+        if Decimal(str(value)) not in found
+    ]
+    problems.extend(
+        f"reply carries amount {value}"
+        for value in expect.get("absent", [])
+        if Decimal(str(value)) in found
+    )
     return problems
 
 
 def _keywords(expect: dict[str, Any], reply: str) -> list[str]:
     folded = fold(reply)
-    problems = [f"reply lacks {word!r}" for word in expect.get("reply_all", [])
-                if fold(word) not in folded]
+    problems = [
+        f"reply lacks {word!r}" for word in expect.get("reply_all", []) if fold(word) not in folded
+    ]
     options = expect.get("reply_any", [])
     if options and not any(fold(word) in folded for word in options):
         problems.append(f"reply has none of {options}")
-    problems.extend(f"reply has {word!r}" for word in expect.get("reply_none", [])
-                    if fold(word) in folded)
+    problems.extend(
+        f"reply has {word!r}" for word in expect.get("reply_none", []) if fold(word) in folded
+    )
     return problems

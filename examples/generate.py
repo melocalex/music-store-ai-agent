@@ -26,9 +26,12 @@ from music_store_agent.run import run_turn
 OUT_DIR = Path(__file__).with_name("transcripts")
 EXIT_NO_KEY = 2
 EXIT_STOPPED = 3
-_STOPPERS = frozenset(
-    {PROVIDER_ERROR_MESSAGE, QUOTA_DAY_MESSAGE, RATE_LIMIT_MESSAGE, DAILY_CAP_MESSAGE}
-)
+_STOPPERS = frozenset({
+    PROVIDER_ERROR_MESSAGE,
+    QUOTA_DAY_MESSAGE,
+    RATE_LIMIT_MESSAGE,
+    DAILY_CAP_MESSAGE,
+})
 
 SCRIPTS = (
     {

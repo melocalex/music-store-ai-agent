@@ -68,8 +68,9 @@ def render() -> str:
         _black_friday(conn),
         _gd20(conn),
     ]
-    body = "\n".join(f"| {finding} | {decision} | {eval_id} |" for finding, decision, eval_id in
-                     rows)
+    body = "\n".join(
+        f"| {finding} | {decision} | {eval_id} |" for finding, decision, eval_id in rows
+    )
     return (
         "# Data quality\n\n"
         "Generated from the CSVs by `python -m music_store_agent.quality`. Each finding is "
@@ -113,8 +114,7 @@ def _states(conn: sqlite3.Connection) -> Row:
         f"unknown status {counts[STATE_UNKNOWN]}"
     )
     decision = (
-        "Sell only available items. Coming soon, discontinued, and an unknown status "
-        "have no price"
+        "Sell only available items. Coming soon, discontinued, and an unknown status have no price"
     )
     return finding, decision, "coming-soon"
 
@@ -164,8 +164,9 @@ def _pix_history(conn: sqlite3.Connection) -> Row:
         if row["payment_method"] == PAYMENT_PIX and int(row["order_id"]) in items
     }
     at_list = [str(order_id) for order_id, total in pix.items() if total == items[order_id]]
-    at_pix = [str(order_id) for order_id, total in pix.items() 
-              if total == pix_price(items[order_id])]
+    at_pix = [
+        str(order_id) for order_id, total in pix.items() if total == pix_price(items[order_id])
+    ]
     finding = (
         f"PIX orders stored at the item sum: {', '.join(at_list) or 'none'}. "
         f"Stored at the item sum minus {PIX_PERCENT}%: {', '.join(at_pix) or 'none'}"
@@ -271,9 +272,7 @@ def _promo_band(conn: sqlite3.Connection) -> Row:
 
 def _black_friday(conn: sqlite3.Connection) -> Row:
     rows = [
-        row
-        for row in fetch_promotions(conn)
-        if fold(BLACK_FRIDAY) in fold(str(row["description"]))
+        row for row in fetch_promotions(conn) if fold(BLACK_FRIDAY) in fold(str(row["description"]))
     ]
     active = sum(1 for row in rows if int(row["is_active"]) == 1)
     finding = f"{BLACK_FRIDAY} rows: {len(rows)}, active: {active}"
