@@ -135,7 +135,7 @@
     - prompt: Qual o frete do Yamaha C40 para São Paulo?
       calls:
         - tool: quote_offer
-          args: {query: "C40", quantity: 1, payment: pix, destination: sao_paulo}
+          args: {query: "C40", quantity: 1, payment: pix, destination: other}
           contains: ["não é calculado"]
       reply_contains: ["não é calculado aqui"]
       reply_excludes: ["R$"]

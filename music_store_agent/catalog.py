@@ -7,8 +7,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from music_store_agent.constants import (
+    OFFSET_MAX,
     SEARCH_ROW_CAP,
     SIMILAR_CAP,
+    SORT_NAME,
+    SORT_PRICE_ASC,
+    SORT_PRICE_DESC,
     STATE_AVAILABLE,
     STATE_COMING_SOON,
     STATE_DISCONTINUED,
@@ -19,7 +23,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import fetch_products, fetch_promotions
 from music_store_agent.ledger import Ledger
-from music_store_agent.money import percent_off
+from music_store_agent.money import percent_off, pix_price
 from music_store_agent.textutil import (
     code_tokens,
     description_conflicts,
@@ -50,8 +54,36 @@ _ALIASES = {
     "flauta": _WIND,
     "sax": _WIND,
     "saxofone": _WIND,
+    "guitar": "Guitarras",
+    "guitars": "Guitarras",
+    "bass": "Baixos",
+    "drum": "Baterias e Percussão",
+    "drums": "Baterias e Percussão",
+    "keyboard": "Teclados e Pianos",
+    "keyboards": "Teclados e Pianos",
+    "flute": _WIND,
 }
-_SYNONYMS = {"eletroacustico": "eletrico", "eletroacusticos": "eletrico"}
+# Rewritten before the alias lookup, so "preço baixo" is not the bass family.
+_PHRASES = {
+    "preco baixo": "barato",
+    "valor baixo": "barato",
+    "mais em conta": "barato",
+    "acoustic guitar": "violao",
+    "classical guitar": "violao",
+    "electric guitar": "guitarra",
+}
+_SYNONYMS = {
+    "eletroacustico": "eletrico",
+    "eletroacusticos": "eletrico",
+    "eletrica": "eletrico",
+    "electric": "eletrico",
+    "aco": "steel",
+}
+_SPEC_TAGS = {
+    ("electronics", "yes"): ("eletrico",),
+    ("strings", "steel"): ("steel",),
+}
+_EXPENSIVE = frozenset({"caro", "cara", "caros", "expensive", "top"})
 _STOP = frozenset(
     "a o os as de do da das dos um uma e ou com sem para por em no na ate the an of to up under "
     "over me my is how much what which any algum alguma quais qual tem voce voces quero preco "
@@ -171,25 +203,47 @@ class CatalogQuery:
     text: str = ""
     category: str | None = None
     max_price: Decimal | None = None
-    sort_by: str = "price_asc"
+    sort_by: str = SORT_PRICE_ASC
     offset: int = 0
 
 
 def search_catalog(products: tuple[Product, ...], request: CatalogQuery, ledger: Ledger) -> str:
-    query = request.text
-    category = request.category
-    max_price = request.max_price
-    sort_by = request.sort_by
-    offset = request.offset
-    chosen, tokens, conflict = _interpret(query, category)
+    family = None
+    if request.category:
+        family = resolve_category(request.category, products)
+        if family is None:
+            names = ", ".join(sorted({product.category for product in products}))
+            return f"Não conheço a categoria {request.category}. Use uma destas: {names}."
+    chosen, tokens, conflict = _interpret(request.text, family)
     if conflict:
         return "Há mais de uma família nesse pedido. Diga se é violão, guitarra, baixo ou ukulele."
-    matched = _filter(products, chosen, tokens, max_price, sellable_only=True)
-    ordered = _sort(matched, sort_by)
-    return _page(ordered, offset, ledger, chosen)
+    matched = _filter(products, chosen, tokens, request.max_price, sellable_only=True)
+    ordered = _sort(matched, _sort_order(request))
+    text = _page(ordered, request.offset, ledger, chosen)
+    if request.max_price is None:
+        return text
+    ledger.add_policy(request.max_price)
+    ceiling = f"amount={format_amount(request.max_price)} {format_brl(request.max_price)}"
+    return f"Teto pedido pelo cliente: product_id=null {ceiling}.\n{text}"
 
 
-def find_products(products: tuple[Product, ...], query: str) -> list[Product]:
+def resolve_category(raw: str, products: tuple[Product, ...]) -> str | None:
+    """Accept "Violão", "violões", "violao", or the exact catalog name."""
+    folded = fold(raw).strip()
+    for name in {product.category for product in products} | _WIND_NAMES:
+        if fold(name) == folded:
+            return name
+    aliases = _aliases_in(raw)
+    return aliases[0] if len(aliases) == 1 else None
+
+
+def find_products(
+    products: tuple[Product, ...], query: str, product_id: int | None = None
+) -> list[Product]:
+    """Exact id, then model code, then words. A query with no usable word matches nothing."""
+    asked = product_id if product_id is not None else _id_in(query)
+    if asked is not None:
+        return [product for product in products if product.product_id == asked]
     codes = code_tokens(query)
     if codes:
         hits = [product for product in products if codes & code_tokens(product.name)]
@@ -198,22 +252,37 @@ def find_products(products: tuple[Product, ...], query: str) -> list[Product]:
     chosen, tokens, conflict = _interpret(query, None)
     if conflict:
         return []
+    tokens = [token for token in tokens if token in _vocabulary(products)]
+    if chosen is None and not tokens:
+        return []
     return _filter(products, chosen, tokens, None, sellable_only=False)
 
 
+def _id_in(query: str) -> int | None:
+    match = re.fullmatch(r"(?:id|produto|product_id)?\s*#?\s*(\d+)", fold(query).strip())
+    return int(match.group(1)) if match else None
+
+
 def _interpret(query: str, category: str | None) -> tuple[str | None, list[str], bool]:
-    aliases = _aliases_in(query)
     if category:
         return category, _content_tokens(query), False
+    aliases = _aliases_in(query)
     if len(aliases) > 1:
         return None, [], True
     chosen = aliases[0] if aliases else None
     return chosen, _content_tokens(query), False
 
 
+def _normalized(query: str) -> str:
+    text = fold(query)
+    for phrase, replacement in _PHRASES.items():
+        text = text.replace(phrase, replacement)
+    return text
+
+
 def _aliases_in(query: str) -> list[str]:
     found: list[str] = []
-    for token in re.findall(r"[a-z0-9]+", fold(query)):
+    for token in re.findall(r"[a-z0-9]+", _normalized(query)):
         name = _ALIASES.get(_SYNONYMS.get(token, token))
         if name and name not in found:
             found.append(name)
@@ -222,7 +291,7 @@ def _aliases_in(query: str) -> list[str]:
 
 def _content_tokens(query: str) -> list[str]:
     tokens: list[str] = []
-    for token in re.findall(r"[a-z0-9]+", fold(query)):
+    for token in re.findall(r"[a-z0-9]+", _normalized(query)):
         token = _SYNONYMS.get(token, token)
         if token in _STOP or token in _ALIASES or token.isdigit() or len(token) < 3:
             continue
@@ -239,9 +308,11 @@ def _filter(
     *,
     sellable_only: bool,
 ) -> list[Product]:
+    known = _vocabulary(products)
+    useful = [token for token in tokens if token in known]
     pool = [product for product in products if _category_ok(product, category)]
-    if tokens:
-        pool = [product for product in pool if _tokens_ok(product, tokens)]
+    if useful:
+        pool = [product for product in pool if set(useful) <= _words(product)]
     if sellable_only:
         pool = [product for product in pool if is_sellable(product)]
     if max_price is not None:
@@ -257,17 +328,35 @@ def _category_ok(product: Product, category: str | None) -> bool:
     return product.category == category
 
 
-def _tokens_ok(product: Product, tokens: list[str]) -> bool:
+def _words(product: Product) -> set[str]:
+    """Name, category, and spec words. Descriptions are left out: six name another brand."""
     words = set(re.findall(r"[a-z0-9]+", fold(product.name)))
     words.update(re.findall(r"[a-z0-9]+", fold(product.category)))
-    codes = code_tokens(product.name)
-    return all(token in words or token in codes for token in tokens)
+    for key, value in product.details.specs:
+        words.update(re.findall(r"[a-z0-9]+", fold(value)))
+        words.update(_SPEC_TAGS.get((key, fold(value)), ()))
+    words.update(code_tokens(product.name))
+    return words
+
+
+def _vocabulary(products: tuple[Product, ...] | list[Product]) -> set[str]:
+    known: set[str] = set()
+    for product in products:
+        known.update(_words(product))
+    return known
+
+
+def _sort_order(request: CatalogQuery) -> str:
+    if request.sort_by != SORT_PRICE_ASC:
+        return request.sort_by
+    words = set(re.findall(r"[a-z]+", _normalized(request.text)))
+    return SORT_PRICE_DESC if words & _EXPENSIVE else SORT_PRICE_ASC
 
 
 def _sort(products: list[Product], sort_by: str) -> list[Product]:
-    if sort_by == "name":
+    if sort_by == SORT_NAME:
         return sorted(products, key=lambda product: fold(product.name))
-    if sort_by == "price_desc":
+    if sort_by == SORT_PRICE_DESC:
         return sorted(products, key=effective_price, reverse=True)
     return sorted(products, key=lambda product: (effective_price(product), fold(product.name)))
 
@@ -276,7 +365,7 @@ def _page(products: list[Product], offset: int, ledger: Ledger, category: str | 
     total = len(products)
     if total == 0:
         return _empty(category)
-    start = max(0, offset)
+    start = min(max(0, offset), OFFSET_MAX)
     rows = products[start : start + SEARCH_ROW_CAP]
     if not rows:
         return f"Não há mais itens. O filtro tem {total}."
@@ -409,8 +498,6 @@ def _promo_price(product: Product, ledger: Ledger) -> str:
 
 
 def _pix_price(product: Product, ledger: Ledger) -> str:
-    from music_store_agent.money import pix_price
-
     price = pix_price(product.list_price)
     ledger.add_product(product.product_id, price, product.name)
     shown = format_brl(price)

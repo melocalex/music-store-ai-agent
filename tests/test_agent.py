@@ -153,3 +153,27 @@ def test_budget_text_is_parsed_and_nonsense_asks_for_a_retry() -> None:
     assert _money(" ") is None
     with pytest.raises(ModelRetry):
         _money("mil e poucos")
+
+
+def _tool_text(messages) -> str:
+    return "\n".join(
+        str(part.content)
+        for message in messages
+        for part in getattr(message, "parts", [])
+        if getattr(part, "part_kind", "") in {"tool-return", "retry-prompt"}
+    )
+
+
+def _city_spelled_out(messages, _info):
+    if _tool_text(messages):
+        return _final("Qual cidade?", [])
+    args = {"query": "C40", "destination": "Campo Grande"}
+    return ModelResponse(parts=[ToolCallPart(tool_name="quote_offer", args=args)])
+
+
+def test_free_text_destination_is_rejected_by_the_tool_schema(tmp_path) -> None:
+    deps = _deps(tmp_path)
+    result = asyncio.run(build_agent(FunctionModel(_city_spelled_out)).run("frete", deps=deps))
+    assert result.output.message == "Qual cidade?"
+    assert "campo_grande" in _tool_text(result.all_messages())
+    assert deps.ledger.by_product == {}

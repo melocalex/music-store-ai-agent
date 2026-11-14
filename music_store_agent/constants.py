@@ -2,6 +2,7 @@
 
 from datetime import time
 from decimal import Decimal
+from typing import Literal
 
 STORE_NAME = "Empório da Música"
 ASSISTANT_NAME = "Aria"
@@ -80,6 +81,10 @@ STATE_OUT_OF_STOCK = "out_of_stock"
 STATE_DISCONTINUED = "discontinued"
 STATE_COMING_SOON = "coming_soon"
 
+SORT_PRICE_ASC = "price_asc"
+SORT_PRICE_DESC = "price_desc"
+SORT_NAME = "name"
+
 OPEN_DELIVERY_STATUSES = frozenset({"shipped", "confirmed", "pending"})
 PAYMENT_PIX = "pix"
 PAYMENT_DEBIT = "debit"
@@ -89,6 +94,11 @@ PAYMENT_SPLIT = "pix_and_card"
 CASH_PAYMENTS = frozenset({PAYMENT_PIX, PAYMENT_DEBIT, PAYMENT_BOLETO})
 DESTINATION_CITY = "campo_grande"
 DESTINATION_OTHER = "other"
+
+# Tool arguments the model must pick from. Pydantic turns these into enums in the schema.
+SortOrder = Literal[SORT_PRICE_ASC, SORT_PRICE_DESC, SORT_NAME]
+PaymentMethod = Literal[PAYMENT_PIX, PAYMENT_DEBIT, PAYMENT_CREDIT, PAYMENT_BOLETO, PAYMENT_SPLIT]
+Destination = Literal[DESTINATION_CITY, DESTINATION_OTHER]
 
 VERIFICATION_FAILED = "Não encontrei um pedido com esses dados."
 VERIFICATION_LOCKED = "Não consegui confirmar o pedido. Vou chamar alguém da equipe."
