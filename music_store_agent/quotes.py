@@ -1,19 +1,25 @@
 """Build a sellable offer from the catalog price and the payment rules."""
 
-from music_store_agent.catalog import Product, effective_price
+from decimal import Decimal
+
+from music_store_agent.catalog import Product, effective_price, promo_text
 from music_store_agent.constants import (
     CASH_INSTALLMENTS,
     CASH_PAYMENTS,
+    FREIGHT_FREE_FROM,
     PAYMENT_CREDIT,
     PAYMENT_PIX,
     PAYMENT_SPLIT,
+    SPLIT_PAYMENT_ABOVE,
 )
 from music_store_agent.ledger import Ledger
 from music_store_agent.money import (
+    Parcels,
     decide_freight,
     decide_installments,
     line_total,
     max_installments,
+    pix_price,
     quantity_error,
     split_allowed,
 )
@@ -42,25 +48,22 @@ def quote_text(
     return "\n".join(lines)
 
 
-def _headline(product: Product, quantity: int, merchandise) -> str:
+def _headline(product: Product, quantity: int, merchandise: Decimal) -> str:
     shown = format_brl(merchandise)
     base = (
         f"{product.name} x{quantity}. "
         f"product_id={product.product_id} amount={format_amount(merchandise)} {shown}."
     )
-    if product.promos.percent is None:
+    promo = promo_text(product)
+    if promo is None:
         return base + " Sem promoção ativa."
-    campaign = product.promos.campaign
-    percent = product.promos.percent
-    return base + f" Promoção {campaign} {percent}% já aplicada. PIX não acumula."
+    return base + f" Promoção já aplicada: {promo}. PIX não acumula."
 
 
-def _payment_line(product: Product, merchandise, payment: str, ledger: Ledger) -> str:
+def _payment_line(product: Product, merchandise: Decimal, payment: str, ledger: Ledger) -> str:
     if payment == PAYMENT_PIX and product.promos.percent is not None:
         return "PIX não entra em cima de promoção. O valor acima é o preço a pagar."
     if payment == PAYMENT_PIX:
-        from music_store_agent.money import pix_price
-
         payable = pix_price(merchandise)
         ledger.add_product(product.product_id, payable, product.name)
         shown = format_brl(payable)
@@ -72,49 +75,51 @@ def _payment_line(product: Product, merchandise, payment: str, ledger: Ledger) -
     return "Forma de pagamento desconhecida. Use pix, debit, credit, boleto ou pix_and_card."
 
 
-def _split_line(merchandise, ledger: Ledger) -> str:
-    from music_store_agent.constants import SPLIT_PAYMENT_ABOVE
-
+def _split_line(merchandise: Decimal, ledger: Ledger) -> str:
     ledger.add_policy(SPLIT_PAYMENT_ABOVE)
-    if split_allowed(merchandise):
-        ceiling = format_brl(SPLIT_PAYMENT_ABOVE)
-        return f"PIX mais cartão é permitido acima de {ceiling}. Não calculo a divisão."
     ceiling = format_brl(SPLIT_PAYMENT_ABOVE)
+    if split_allowed(merchandise):
+        return f"PIX mais cartão é permitido acima de {ceiling}. Não calculo a divisão."
     return f"PIX mais cartão só acima de {ceiling}. Este valor não chega lá."
 
 
 def _installment_line(
     product: Product,
-    merchandise,
+    merchandise: Decimal,
     payment: str,
     installments: int,
     ledger: Ledger,
 ) -> str:
     if payment != PAYMENT_CREDIT:
         return "Essa forma é à vista. Não parcelo aqui."
-    decision = decide_installments(merchandise, installments)
     if installments == CASH_INSTALLMENTS:
         return "Crédito em 1x é à vista."
-    if not decision.allowed or decision.parcel is None:
+    decision = decide_installments(merchandise, installments)
+    if not decision.allowed or decision.parcels is None:
         ceiling = max_installments(merchandise)
         return f"{installments}x não é permitido ({decision.reason}). Máximo: {ceiling}x."
-    ledger.add_product(product.product_id, decision.parcel, product.name)
-    shown = format_brl(decision.parcel)
+    return _parcel_text(product, decision.parcels, ledger)
+
+
+def _parcel_text(product: Product, parcels: Parcels, ledger: Ledger) -> str:
+    ledger.add_product(product.product_id, parcels.rest, product.name)
+    ledger.add_product(product.product_id, parcels.first, product.name)
+    rest = f"product_id={product.product_id} amount={format_amount(parcels.rest)}"
+    if parcels.first == parcels.rest:
+        return f"{parcels.count}x de {rest} {format_brl(parcels.rest)}."
+    first = f"amount={format_amount(parcels.first)} {format_brl(parcels.first)}"
     return (
-        f"{installments}x de product_id={product.product_id} "
-        f"amount={format_amount(decision.parcel)} {shown}."
+        f"{parcels.count}x: a primeira de {first} e {parcels.count - 1} de "
+        f"{rest} {format_brl(parcels.rest)}. A primeira leva os centavos que sobram."
     )
 
 
-def _freight_line(merchandise, in_city: bool, ledger: Ledger) -> str:
+def _freight_line(merchandise: Decimal, in_city: bool, ledger: Ledger) -> str:
     decision = decide_freight(merchandise, in_city)
     if decision.kind == "flat" and decision.amount is not None:
         ledger.add_policy(decision.amount)
         amount = format_amount(decision.amount)
         return decision.note + f" Regra: product_id=null amount={amount}."
     if decision.kind == "free":
-        from music_store_agent.constants import FREIGHT_FREE_FROM
-
         ledger.add_policy(FREIGHT_FREE_FROM)
-        return decision.note
     return decision.note
