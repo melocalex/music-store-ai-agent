@@ -9,11 +9,12 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from pydantic_ai.messages import ModelMessage
+
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import make_deps
-from pydantic_ai.messages import ModelMessage
 
 OUT_DIR = Path(__file__).with_name("transcripts")
 

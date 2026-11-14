@@ -4,6 +4,12 @@ import asyncio
 from datetime import date
 
 import pytest
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models import infer_model
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.test import TestModel
+
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
@@ -17,11 +23,6 @@ from music_store_agent.constants import (
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.run import run_turn
-from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.models import infer_model
-from pydantic_ai.models.function import FunctionModel
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.test import TestModel
 
 PINNED = date(2026, 3, 23)
 

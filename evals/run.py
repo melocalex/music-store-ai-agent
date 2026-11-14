@@ -14,17 +14,17 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import FunctionModel
+
+from evals.score import score_case
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import SAFE_PRICE_MESSAGE
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import Deps, make_deps
 from music_store_agent.textutil import amounts_in_text
-from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
-from pydantic_ai.models.function import FunctionModel
-
-from evals.score import score_case
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
