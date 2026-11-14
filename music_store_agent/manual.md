@@ -1,22 +1,22 @@
 # sobre
 
-A Empório da Música é uma loja de instrumentos em Campo Grande, Mato Grosso do Sul, fundada em 2008.
+A Empório da Música é uma loja especializada em instrumentos musicais, fundada em 2008 em Campo Grande, Mato Grosso do Sul. Atende músicos iniciantes, intermediários e profissionais.
+
+Missão: democratizar o acesso a instrumentos musicais de qualidade na região Centro-Oeste, com atendimento especializado e preços competitivos.
 
 Razão social: Empório da Música Instrumentos Musicais Ltda.
 Nome fantasia: Empório da Música.
 CNPJ: 12.345.678/0001-90.
 Endereço: Rua 14 de Maio, 3200 — Centro, Campo Grande - MS, 79202-333.
 Telefone fixo: (67) 3341-4444.
+WhatsApp: (67) 3321-4500.
 E-mail: contato@emporiodamusica.com.br.
-O WhatsApp de atendimento está na seção atendimento.
 
-A loja vende instrumentos musicais. Não vende cordas, palhetas, cabos, cases, pedais ou amplificadores. Não indique loja parceira: a lista não existe aqui.
+A loja trabalha exclusivamente com instrumentos musicais: guitarras, baixos, violões, baterias, teclados, instrumentos de sopro, cordas orquestrais e ukuleles. Não vende acessórios como cordas, palhetas, cabos, cases, pedais ou amplificadores.
 
-O texto antigo falava em mais de 300 instrumentos. A contagem que vale é a do catálogo carregado no sistema.
+Nota do atendimento: o manual impresso fala em mais de 300 instrumentos, mostra o fixo também como WhatsApp e escreve o e-mail com acento. Vale a contagem do catálogo no sistema, o WhatsApp da seção atendimento e o e-mail sem acento.
 
 # horario
-
-Atendimento na loja e no WhatsApp:
 
 | Dia | Horário |
 | --- | --- |
@@ -24,9 +24,11 @@ Atendimento na loja e no WhatsApp:
 | Sábado | 09:00 às 13:00 |
 | Domingo e feriados | Fechado |
 
-O fechamento é inclusivo: 18:00 ainda está aberto no dia de semana, 13:00 ainda está aberto no sábado.
+O WhatsApp segue o mesmo horário, com respostas automáticas fora do expediente.
 
-Feriados fixos usados por este atendimento, além do domingo:
+Em datas especiais (Black Friday, Aniversário da Loja, Natal), o horário pode ser estendido. As mudanças são avisadas antes nas redes sociais e no WhatsApp.
+
+Nota do atendimento: o fechamento é inclusivo. 18:00 ainda é horário de loja no dia de semana, e 13:00 no sábado. Feriados fixos considerados, além do domingo:
 
 - 01/01 Confraternização Universal
 - 21/04 Tiradentes
@@ -41,92 +43,112 @@ Feriados fixos usados por este atendimento, além do domingo:
 - 20/11 Dia Nacional de Zumbi e da Consciência Negra
 - 25/12 Natal
 
-Carnaval, Sexta-feira Santa e Corpus Christi mudam de data e não estão nesta lista. Não confirme esses dias. Encaminhe à equipe.
-
-Em Black Friday, aniversário da loja e Natal o horário pode mudar. Sem aviso no sistema, vale a tabela.
+Carnaval, Sexta-feira Santa e Corpus Christi mudam de data e não estão nesta lista.
 
 # pagamento
 
-| Forma | Condição | Regra usada no atendimento |
+| Forma | Condição | Observação |
 | --- | --- | --- |
-| PIX | à vista | 5% sobre o preço de tabela, nunca sobre preço de promoção |
-| Cartão de débito | à vista | todas as bandeiras |
-| Cartão de crédito | até 12x sem juros | faixas abaixo |
-| Boleto | à vista | compensação em até 3 dias úteis |
+| PIX | À vista | 5% de desconto sobre o preço de tabela |
+| Cartão de débito | À vista | Todas as bandeiras |
+| Cartão de crédito | Até 12x sem juros | Parcela mínima por faixa, abaixo |
+| Boleto | À vista | Compensação em até 3 dias úteis |
 
-Parcelamento, pela regra detalhada:
+Parcelamento:
 
-- 1x é à vista.
-- De 2x a 3x, parcela mínima de R$ 50,00.
-- De 4x a 6x, parcela mínima de R$ 80,00.
-- De 7x a 12x, parcela mínima de R$ 100,00. Os R$ 100,00 são só desta faixa.
-- A parcela mínima vale para a divisão exata, antes do arredondamento.
-- Os centavos que sobram da divisão vão na primeira parcela.
-- PIX mais cartão só acima de R$ 2.000,00. No valor exato, não.
+- Até 3x: sem juros, sem valor mínimo de parcela, exceto abaixo de R$ 50,00.
+- De 4x a 6x: sem juros, parcela mínima de R$ 80,00.
+- De 7x a 12x: sem juros, parcela mínima de R$ 100,00.
+- Combinação de formas de pagamento, como PIX mais cartão: para compras acima de R$ 2.000,00.
 
-Não prometa um desconto que o sistema não devolveu.
+Nota do atendimento: a tabela impressa cita parcela mínima de R$ 100,00 para todo o crédito. Vale a regra por faixa. Em 2x e 3x a parcela mínima é R$ 50,00. A parcela mínima vale para a divisão exata, e os centavos que sobram vão na primeira parcela. No valor exato de R$ 2.000,00 não há combinação.
 
 # trocas
 
-Arrependimento: 7 dias corridos a partir do recebimento, só para compra online, produto sem uso e na embalagem original. O frete da volta é da loja. O reembolso sai na mesma forma de pagamento em até 10 dias úteis. O pedido não guarda canal nem data de recebimento. Peça a data e encaminhe. Não aprove.
+A loja segue o Código de Defesa do Consumidor (Lei nº 8.078/90).
 
-Troca por defeito: 30 dias corridos a partir da compra. Depois disso, a garantia legal segue na seção garantia. A loja pode intermediar, e a equipe confirma o caso.
+Arrependimento, em compras online: devolução em até 7 dias corridos após o recebimento, sem justificativa. O produto volta na embalagem original, sem sinais de uso, com acessórios e manuais. O reembolso sai na mesma forma de pagamento em até 10 dias úteis. O frete da devolução é da loja.
 
-Troca por preferência: 7 dias corridos a partir do recebimento, com o produto sem uso. A data de recebimento não está no pedido. Peça a data e encaminhe. Não aprove.
+Troca por defeito de fabricação: em até 30 dias corridos após a compra. Depois disso, o cliente aciona a garantia com o fabricante, e a loja pode intermediar se o cliente pedir. Mau uso, queda, umidade excessiva ou modificação não autorizada não são cobertos.
 
-Não trocamos instrumento com setup ou regulagem sob encomenda, item de venda final, nem boquilha.
+Troca por preferência (cor, modelo, tamanho): em até 7 dias, se houver o produto desejado. O produto precisa estar em perfeito estado e na embalagem original. Diferença de valor é cobrada ou reembolsada conforme o caso.
 
-Um pedido cancelado não entra em troca.
+Não entram em troca: instrumento com personalização ou ajuste sob encomenda (setup, regulagem especial), produto de liquidação com aviso de "venda final" e boquilha de instrumento de sopro, por higiene.
+
+Nota do atendimento: o pedido não guarda a data de recebimento nem o canal da compra. O manual não diz se os 7 dias da troca por preferência contam da compra ou do recebimento.
 
 # frete
 
-Em Campo Grande e região metropolitana, o frete é grátis a partir de R$ 500,00, inclusive no valor exato. Abaixo disso, a taxa é R$ 35,00. O prazo de política é de 1 a 3 dias úteis, por motoboy. Se um pedido tiver outra data gravada, informe a data gravada. Não troque pela regra geral.
+Região metropolitana de Campo Grande:
 
-Fora de Campo Grande o frete depende de CEP, peso e tamanho. Não calcule valor. Instrumento grande (bateria acústica, piano digital, contrabaixo) pede cotação à parte. Encaminhe.
+- Frete grátis para pedidos acima de R$ 500,00.
+- Abaixo de R$ 500,00, taxa fixa de R$ 35,00.
+- Prazo de 1 a 3 dias úteis.
+- Entrega por motoboy próprio. O cliente recebe uma ligação antes da entrega.
 
-O código de rastreio, quando existe, tem o formato BR, nove caracteres e BR. Ausência de código antes do envio é normal.
+Outras cidades, por Correios e Jadlog:
+
+| Modalidade | Prazo estimado | Rastreamento | Seguro |
+| --- | --- | --- | --- |
+| PAC (Correios) | 5 a 12 dias úteis | Sim | Incluído |
+| SEDEX (Correios) | 2 a 5 dias úteis | Sim | Incluído |
+| Jadlog (.package) | 3 a 8 dias úteis | Sim | Incluído |
+
+O valor do frete sai do CEP de destino, do peso e das dimensões. Instrumento de grande porte (bateria acústica, piano digital, contrabaixo) pode exigir frete especial com cotação individual. Todo envio tem seguro contra extravio e dano no transporte. Se o produto chegar avariado, o cliente deve recusar o recebimento e falar com a loja na hora.
+
+Rastreamento: o código vai por e-mail e WhatsApp quando o pedido é despachado. O formato é BR, nove caracteres e BR, como BR4K7M2X9P1BR. A consulta é feita no site dos Correios ou da Jadlog.
+
+Nota do atendimento: R$ 500,00 exatos contam como frete grátis, sobre o valor dos itens antes do desconto PIX. O atendimento virtual não calcula frete fora de Campo Grande. Um pedido com data de entrega gravada usa essa data.
 
 # promocoes
 
-Campanhas citadas no manual: aniversário da loja em agosto (faixa típica de 10% a 25%), Black Friday em novembro (faixa típica de 15% a 30%), volta às aulas, queima de estoque e semana do músico.
+Campanhas do ano:
 
-Só uma promoção ativa no sistema muda o preço. Promoção inativa não vale. Duas promoções não se somam. O desconto de PIX não incide sobre preço promocional.
+- Aniversário da Loja, em agosto: de 10% a 25% em itens selecionados.
+- Black Friday, em novembro: de 15% a 30% em todo o catálogo.
+- Volta às Aulas, em fevereiro: descontos especiais em instrumentos para estudantes.
+- Queima de Estoque: promoções pontuais para renovar o catálogo.
+- Semana do Músico: na semana do Dia do Músico, 22 de novembro.
 
-Mostre preço de tabela, percentual e preço promocional quando a promoção estiver ativa. Não calcule um percentual que a ferramenta não devolveu.
+Regras: promoções não se somam. O desconto de PIX (5%) não vale sobre preço promocional. Promoções dependem do estoque, e produto esgotado durante a promoção não dá direito a rain check (reserva de preço). O preço promocional aparece sempre junto do preço original e do percentual de desconto.
+
+Nota do atendimento: só uma promoção ativa no sistema muda o preço.
 
 # atendimento
 
-O WhatsApp (67) 3321-4500 é o canal remoto. O telefone fixo da loja é o (67) 3341-4444, na seção sobre.
+O WhatsApp (67) 3321-4500 é o principal canal remoto da loja. Quem atende pode ser alguém da equipe ou o assistente virtual.
 
-Tom direto e cordial. Diga que o atendimento é virtual. Responda no idioma da pessoa.
-Fora do expediente, diga quando a equipe volta.
-Não invente preço, estoque ou prazo.
-Não venda acessório e não invente loja parceira.
-Cumprimente pelo primeiro nome só depois da confirmação do pedido.
-Feche perguntando se a pessoa precisa de mais alguma coisa.
+Tempo de resposta: até 5 minutos no horário de funcionamento. Fora do expediente, o assistente informa quando a equipe volta.
 
-Fora de estoque: diga que está indisponível e ofereça alternativa que a ferramenta trouxer.
-Descontinuado: saiu do catálogo. Ofereça alternativa. Estoque gravado não volta a vender.
-Lançamento: não está à venda e não prometa preço.
-Promoção vencida: diga que não está ativa e dê o preço atual.
-Reclamação: registre e encaminhe. Retorno em 24 horas úteis.
-Compra, cancelamento, troca e mudança de endereço: explique a regra e encaminhe. Não conclua.
+Produto fora de estoque: está temporariamente indisponível, e o atendimento sugere alternativas disponíveis.
+Produto descontinuado: não faz mais parte do catálogo, e o atendimento oferece modelos equivalentes.
+Promoção expirada: o atendimento diz isso com clareza e apresenta o preço atual.
+Reclamação: o atendimento registra e encaminha ao responsável. Prazo de retorno: 24 horas úteis.
 
 # garantia
 
-Garantia legal: 90 dias corridos contra defeito de fabricação, contados do recebimento.
-A troca de 30 dias da seção trocas é outra regra, contada da compra.
-Se os dois prazos aparecerem no mesmo pedido, explique os dois e encaminhe. Não escolha um desfecho.
+Garantia legal: 90 dias contra defeito de fabricação, contados do recebimento pelo cliente.
 
-A garantia de fábrica varia e vem no certificado. Não invente o prazo do fabricante.
-Não cobre desgaste, mau uso, queda, umidade, conserto de terceiro nem dano só estético.
+Garantia do fabricante: a maioria dos fabricantes oferece de 6 meses a 2 anos. Prazo e condições estão no certificado que acompanha cada produto.
+
+A garantia não cobre:
+
+- Desgaste natural de peças (trastes, cordas, feltros, palhetas de sopro).
+- Dano por mau uso, queda ou exposição a condições climáticas extremas.
+- Modificação ou reparo feito por terceiro não autorizado.
+- Dano estético que não afete o funcionamento do instrumento.
 
 # privacidade
 
-Os dados do atendimento servem para pedido, entrega, status e obrigação legal. Promoção só com consentimento. Não compartilhe dados para marketing de terceiro. A pessoa pode pedir exclusão pelo WhatsApp ou pelo e-mail.
+A loja segue a Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Nome, telefone, e-mail e endereço coletados no atendimento servem só para:
 
-Não leia e-mail, telefone ou lista de clientes em voz alta. Confirme um pedido só com o número do pedido e o e-mail completo ou o telefone completo daquele pedido.
+- Processar e entregar pedidos.
+- Avisar status e rastreamento.
+- Enviar promoções e novidades, com consentimento explícito.
+- Cumprir obrigações legais e fiscais.
+
+Os dados não são compartilhados com terceiros para marketing. O cliente pode pedir a exclusão dos dados a qualquer momento pelo WhatsApp ou pelo e-mail.
 
 # disposicoes
 
-Este texto é a referência do atendimento virtual. Em dúvida que comprometa um pedido, encaminhe à equipe. Informação geral sai da seção correspondente, sem inventar exceção.
+Este manual é a referência da equipe de atendimento, incluindo o assistente virtual, e pode ser atualizado. Em dúvida sobre como aplicar uma política, a equipe consulta a gerência antes de responder. Versão 2.1, junho de 2025.

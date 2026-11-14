@@ -146,7 +146,7 @@
       calls:
         - tool: consult_policy
           args: {sections: [frete]}
-          contains: ["inclusive no valor exato", "R$ 500,00"]
+          contains: ["R$ 500,00 exatos contam como frete grátis", "R$ 35,00"]
       reply_contains: ["grátis a partir de R$ 500,00, inclusive"]
       reply_excludes: []
 
@@ -233,8 +233,8 @@
       calls:
         - tool: consult_policy
           args: {sections: [sobre]}
-          contains: ["Não vende cordas"]
-      reply_contains: ["Não vende cordas, palhetas, cabos, cases, pedais ou amplificadores"]
+          contains: ["Não vende acessórios como cordas"]
+      reply_contains: ["não vende cordas, palhetas, cabos, cases, pedais ou amplificadores"]
       reply_excludes: []
 
 - id: late-order
@@ -288,6 +288,6 @@
       calls:
         - tool: consult_policy
           args: {sections: [trocas]}
-          contains: ["Peça a data", "Não aprove"]
+          contains: ["7 dias corridos após o recebimento", "não guarda a data de recebimento"]
       reply_contains: ["Peça a data de recebimento. Não aprove"]
       reply_excludes: []
