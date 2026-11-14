@@ -1,6 +1,6 @@
 # Guardrails
 
-Every value below is a named constant in `music_store_agent/constants.py`, and a test pins it. The source is the policy PDF in `data/store_policies.pdf` unless the row says otherwise.
+Every value below is a named constant in `music_store_agent/constants.py`. Tests check the rules that use these values, most at both sides of their boundary, rather than repeating the numbers. The source is the policy PDF in `data/store_policies.pdf` unless the row says otherwise.
 
 ## Prices
 

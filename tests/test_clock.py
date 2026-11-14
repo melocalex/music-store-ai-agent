@@ -27,6 +27,9 @@ from music_store_agent.constants import (
     WEEKDAY_CLOSE,
     WEEKDAY_OPEN,
 )
+from music_store_agent.constants import (
+    SUNDAY as SUNDAY_WEEKDAY,
+)
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import build_clock
 from music_store_agent.hours import hours_answer, parse_asked_day
@@ -78,6 +81,11 @@ def test_every_fixed_holiday_is_closed_and_its_neighbours_are_not() -> None:
         holiday = date(2026, month, day)
         assert holiday_name(holiday) == name
         assert closed_reason(holiday, REFERENCE_TIME) == name
+        for neighbour in (holiday - timedelta(days=1), holiday + timedelta(days=1)):
+            if holiday_name(neighbour) is None and neighbour.weekday() != SUNDAY_WEEKDAY:
+                assert closed_reason(neighbour, REFERENCE_TIME) is None, neighbour
+            else:
+                assert closed_reason(neighbour, REFERENCE_TIME) is not None, neighbour
     assert holiday_name(date(2026, 11, 20)) == "Dia Nacional de Zumbi e da Consciência Negra"
     santo = date(2026, 6, 13)
     assert next_opening_label(santo, REFERENCE_TIME).startswith("2026-06-15")
