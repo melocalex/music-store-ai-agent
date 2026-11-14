@@ -33,7 +33,7 @@ from music_store_agent.orders import explain_after_sales, load_orders, read_orde
 from music_store_agent.policies import PolicySection, load_manual, sections_text
 from music_store_agent.prompts import INSTRUCTIONS
 from music_store_agent.quotes import quote_text
-from music_store_agent.textutil import amounts_in_text, parse_amount
+from music_store_agent.textutil import amounts_in_text, parse_amount, percents_in_text
 
 _MANUAL = load_manual()
 
@@ -86,11 +86,13 @@ def reference_day(ctx: RunContext[Deps]) -> str:
 
 
 def validate_reply(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
-    gap = grounding_gap(reply.message, reply.quotes, ctx.deps.ledger)
+    names = {product.product_id: product.name for product in load_catalog(ctx.deps.conn)}
+    gap = grounding_gap(reply.message, reply.quotes, ctx.deps.ledger, names)
     if gap.ok:
         return reply
     ctx.deps.counters.validator_firings += 1
-    ctx.deps.counters.validator_catches += 1
+    if gap.unknown:
+        ctx.deps.counters.validator_catches += 1
     raise ModelRetry(RETRY_PRICE)
 
 
@@ -105,13 +107,13 @@ def search_products(
     """Search sellable instruments. Category uses the Portuguese catalog name."""
     ceiling = _money(max_price)
     request = CatalogQuery(query, category, ceiling, sort_by, offset)
-    return search_catalog(load_catalog(ctx.deps.conn), request, ctx.deps.ledger)
+    return _shown(ctx, search_catalog(load_catalog(ctx.deps.conn), request, ctx.deps.ledger))
 
 
 def get_product(ctx: RunContext[Deps], query: str) -> str:
     """Look up one model. Returns out of stock, discontinued, coming soon, or several matches."""
     products = load_catalog(ctx.deps.conn)
-    return describe_matches(products, find_products(products, query), ctx.deps.ledger)
+    return _shown(ctx, describe_matches(products, find_products(products, query), ctx.deps.ledger))
 
 
 def quote_offer(
@@ -125,18 +127,16 @@ def quote_offer(
     """Price one sellable product. Refuses a price for anything not for sale."""
     products = load_catalog(ctx.deps.conn)
     found = find_products(products, query)
-    if len(found) != 1:
-        return describe_matches(products, found, ctx.deps.ledger)
-    product = found[0]
-    if not is_sellable(product):
-        return describe_matches(products, found, ctx.deps.ledger)
+    if len(found) != 1 or not is_sellable(found[0]):
+        return _shown(ctx, describe_matches(products, found, ctx.deps.ledger))
     in_city = destination == DESTINATION_CITY
-    return quote_text(product, quantity, payment, installments, in_city, ctx.deps.ledger)
+    text = quote_text(found[0], quantity, payment, installments, in_city, ctx.deps.ledger)
+    return _shown(ctx, text)
 
 
 def list_active_promotions(ctx: RunContext[Deps]) -> str:
     """List promotions that are active now. Inactive campaigns are not prices."""
-    return active_promotion_text(load_catalog(ctx.deps.conn), ctx.deps.ledger)
+    return _shown(ctx, active_promotion_text(load_catalog(ctx.deps.conn), ctx.deps.ledger))
 
 
 def consult_policy(ctx: RunContext[Deps], sections: list[PolicySection]) -> str:
@@ -144,7 +144,7 @@ def consult_policy(ctx: RunContext[Deps], sections: list[PolicySection]) -> str:
     text = sections_text(list(sections), _MANUAL)
     for amount in amounts_in_text(text):
         ctx.deps.ledger.add_policy(amount)
-    return text
+    return _shown(ctx, text)
 
 
 def verify_customer(
@@ -204,6 +204,12 @@ def _handoff(ctx: RunContext[Deps], reason: str, summary: str) -> None:
         summary,
         ctx.deps.identity.verified_customer_id,
     )
+
+
+def _shown(ctx: RunContext[Deps], text: str) -> str:
+    """Percents in tool text are the only ones the reply may repeat."""
+    ctx.deps.ledger.add_percents(percents_in_text(text))
+    return text
 
 
 def _money(raw: str | None) -> Decimal | None:

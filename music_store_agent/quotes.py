@@ -4,7 +4,6 @@ from music_store_agent.catalog import Product, effective_price
 from music_store_agent.constants import (
     CASH_INSTALLMENTS,
     CASH_PAYMENTS,
-    FREIGHT_FLAT,
     PAYMENT_CREDIT,
     PAYMENT_PIX,
     PAYMENT_SPLIT,
@@ -34,12 +33,12 @@ def quote_text(
         return error
     unit = effective_price(product)
     merchandise = line_total(unit, quantity)
-    ledger.add_product(product.product_id, product.list_price)
-    ledger.add_product(product.product_id, merchandise)
+    ledger.add_product(product.product_id, product.list_price, product.name)
+    ledger.add_product(product.product_id, merchandise, product.name)
     lines = [_headline(product, quantity, merchandise)]
     lines.append(_payment_line(product, merchandise, payment, ledger))
     lines.append(_installment_line(product, merchandise, payment, installments, ledger))
-    lines.append(_freight_line(product, merchandise, in_city, ledger))
+    lines.append(_freight_line(merchandise, in_city, ledger))
     return "\n".join(lines)
 
 
@@ -63,7 +62,7 @@ def _payment_line(product: Product, merchandise, payment: str, ledger: Ledger) -
         from music_store_agent.money import pix_price
 
         payable = pix_price(merchandise)
-        ledger.add_product(product.product_id, payable)
+        ledger.add_product(product.product_id, payable, product.name)
         shown = format_brl(payable)
         return f"PIX product_id={product.product_id} amount={format_amount(payable)} {shown}."
     if payment == PAYMENT_SPLIT:
@@ -99,7 +98,7 @@ def _installment_line(
     if not decision.allowed or decision.parcel is None:
         ceiling = max_installments(merchandise)
         return f"{installments}x não é permitido ({decision.reason}). Máximo: {ceiling}x."
-    ledger.add_product(product.product_id, decision.parcel)
+    ledger.add_product(product.product_id, decision.parcel, product.name)
     shown = format_brl(decision.parcel)
     return (
         f"{installments}x de product_id={product.product_id} "
@@ -107,13 +106,12 @@ def _installment_line(
     )
 
 
-def _freight_line(product: Product, merchandise, in_city: bool, ledger: Ledger) -> str:
+def _freight_line(merchandise, in_city: bool, ledger: Ledger) -> str:
     decision = decide_freight(merchandise, in_city)
     if decision.kind == "flat" and decision.amount is not None:
-        ledger.add_product(product.product_id, decision.amount)
-        ledger.add_policy(FREIGHT_FLAT)
+        ledger.add_policy(decision.amount)
         amount = format_amount(decision.amount)
-        return decision.note + f" product_id={product.product_id} amount={amount}."
+        return decision.note + f" Regra: product_id=null amount={amount}."
     if decision.kind == "free":
         from music_store_agent.constants import FREIGHT_FREE_FROM
 
