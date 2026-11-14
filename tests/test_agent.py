@@ -13,17 +13,28 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
-from music_store_agent.agent import _money, build_agent, fallback_model_id, model_id
+from music_store_agent.agent import (
+    _money,
+    build_agent,
+    fallback_model_id,
+    model_id,
+    request_timeout,
+)
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    MODEL_ATTEMPTS_PER_REQUEST,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
+    MODEL_TIMEOUT_ENV,
+    PROVIDER_SDK_RETRIES,
     SAFE_PRICE_MESSAGE,
     SESSION_CAP_MESSAGE,
     SESSION_TURN_CAP,
+    TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
@@ -52,9 +63,35 @@ def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
     monkeypatch.delenv(MODEL_ENV, raising=False)
     monkeypatch.delenv(MODEL_FALLBACK_ENV, raising=False)
-    chain = build_agent().model
+    monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
+    agent = build_agent()
+    chain = agent.model
     assert isinstance(chain, FallbackModel)
     assert [model.model_id for model in chain.models] == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL]
+    assert agent.model_settings == {
+        "request_timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        "max_retries": PROVIDER_SDK_RETRIES,
+    }
+
+
+def test_primary_and_fallback_fit_in_one_turn() -> None:
+    assert PROVIDER_SDK_RETRIES == 0
+    assert MODEL_ATTEMPTS_PER_REQUEST == 2
+    assert DEFAULT_REQUEST_TIMEOUT_SECONDS * MODEL_ATTEMPTS_PER_REQUEST <= TURN_TIMEOUT_SECONDS
+
+
+def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkeypatch) -> None:
+    monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
+    assert request_timeout() == DEFAULT_REQUEST_TIMEOUT_SECONDS
+    ceiling = TURN_TIMEOUT_SECONDS / MODEL_ATTEMPTS_PER_REQUEST
+    assert request_timeout(f"{ceiling}") == ceiling
+    assert request_timeout(" 12.5 ") == 12.5
+    for wrong in ("0", "-1", "abc", "nan", "inf", f"{ceiling + 0.5}"):
+        with pytest.raises(ValueError, match=MODEL_TIMEOUT_ENV):
+            request_timeout(wrong)
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "60")
+    with pytest.raises(ValueError, match=MODEL_TIMEOUT_ENV):
+        build_agent()
 
 
 def test_fallback_id_has_its_own_variable_and_the_same_startup_check(monkeypatch) -> None:

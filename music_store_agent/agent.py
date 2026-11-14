@@ -1,17 +1,20 @@
 """One assistant, with an explicit tool list."""
 
+import math
 import os
 from decimal import Decimal
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.exceptions import (
     ModelConnectionError,
+    ModelRequestTimeout,
     ModelServerError,
     ModelUnavailableError,
 )
 from pydantic_ai.models import Model, parse_model_id
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.providers import infer_provider_class
+from pydantic_ai.settings import ModelSettings
 
 from music_store_agent.catalog import (
     CatalogQuery,
@@ -26,15 +29,20 @@ from music_store_agent.clock import weekday_name
 from music_store_agent.constants import (
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DESTINATION_CITY,
+    MODEL_ATTEMPTS_PER_REQUEST,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
+    MODEL_TIMEOUT_ENV,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
+    PROVIDER_SDK_RETRIES,
     RETRY_PRICE,
     SORT_PRICE_ASC,
     TOOL_RETRIES,
+    TURN_TIMEOUT_SECONDS,
     Destination,
     HandoffReason,
     PaymentMethod,
@@ -52,9 +60,15 @@ from music_store_agent.textutil import amounts_in_text, parse_amount, percents_i
 
 _MANUAL = load_manual()
 
-# Provider outages move a request to the fallback. A rate limit, a quota, or a rejected request
-# (bad key, unknown model) does not: the fallback would fail the same way or hide the cause.
-PROVIDER_OUTAGES = (ModelUnavailableError, ModelServerError, ModelConnectionError)
+# Provider outages and a request past its timeout move that request to the fallback. A rate
+# limit, a quota, or a rejected request (bad key, unknown model) does not: the fallback would
+# fail the same way or hide the cause.
+PROVIDER_OUTAGES = (
+    ModelUnavailableError,
+    ModelServerError,
+    ModelConnectionError,
+    ModelRequestTimeout,
+)
 
 
 def model_id(raw: str | None = None) -> str:
@@ -76,20 +90,50 @@ def _gemini_id(raw: str | None, env: str, default: str) -> str:
     return chosen
 
 
+def request_timeout(raw: str | None = None) -> float:
+    """Seconds one model gets for one request. The primary and the fallback must fit in a turn."""
+    text = (raw if raw is not None else os.environ.get(MODEL_TIMEOUT_ENV, "")).strip()
+    if not text:
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    ceiling = TURN_TIMEOUT_SECONDS / MODEL_ATTEMPTS_PER_REQUEST
+    try:
+        seconds = float(text)
+    except ValueError:
+        seconds = math.nan
+    if not 0 < seconds <= ceiling:
+        raise ValueError(
+            f"{MODEL_TIMEOUT_ENV}={text!r} must be seconds above 0 and at most {ceiling:g}."
+        )
+    return seconds
+
+
+def request_settings(seconds: float) -> ModelSettings:
+    """Each model gets one attempt under its own deadline. The fallback is the only retry."""
+    return ModelSettings(request_timeout=seconds, max_retries=PROVIDER_SDK_RETRIES)
+
+
 def model_chain(primary: Model | str, fallback: Model | str) -> FallbackModel:
-    """The primary answers. A provider outage moves that request to the fallback."""
+    """The primary answers. An outage or a timeout moves that request to the fallback."""
     return FallbackModel(primary, fallback, fallback_on=PROVIDER_OUTAGES)
 
 
-def build_agent(model: Model | str | None = None) -> Agent[Deps, AgentReply]:
-    """A Model instance runs as given. An id, or nothing, runs that primary with the fallback."""
+def build_agent(
+    model: Model | str | None = None,
+    settings: ModelSettings | None = None,
+) -> Agent[Deps, AgentReply]:
+    """A Model instance runs as given, with only the settings passed in.
+
+    An id, or nothing, runs that primary with the fallback behind it, under the request timeout.
+    """
     if isinstance(model, Model):
         chosen: Model = model
     else:
-        primary, fallback = model_id(model), fallback_model_id()
+        primary, fallback, seconds = model_id(model), fallback_model_id(), request_timeout()
         chosen = model_chain(primary, fallback)
+        settings = settings or request_settings(seconds)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,
+        model_settings=settings,
         deps_type=Deps,
         output_type=AgentReply,
         instructions=INSTRUCTIONS,
