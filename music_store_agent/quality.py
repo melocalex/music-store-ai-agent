@@ -9,6 +9,7 @@ from music_store_agent.constants import (
     STATE_COMING_SOON,
     STATE_DISCONTINUED,
     STATE_OUT_OF_STOCK,
+    STATE_UNKNOWN,
 )
 from music_store_agent.db import (
     data_dir,
@@ -81,19 +82,18 @@ def _empty_categories(conn) -> tuple[str, str, str]:
 
 def _states(conn) -> tuple[str, str, str]:
     products = load_catalog(conn)
-    counts = {STATE_AVAILABLE: 0,
-        STATE_OUT_OF_STOCK: 0,
-        STATE_DISCONTINUED: 0,
-        STATE_COMING_SOON: 0}
+    states = (STATE_AVAILABLE, STATE_OUT_OF_STOCK, STATE_DISCONTINUED, STATE_COMING_SOON)
+    counts = dict.fromkeys((*states, STATE_UNKNOWN), 0)
     for product in products:
-        counts[product_state(product)] = counts.get(product_state(product), 0) + 1
+        counts[product_state(product)] += 1
     finding = (
         f"States: available {counts[STATE_AVAILABLE]}, out of stock {counts[STATE_OUT_OF_STOCK]}, "
-        f"discontinued {counts[STATE_DISCONTINUED]}, coming soon {counts[STATE_COMING_SOON]}"
+        f"discontinued {counts[STATE_DISCONTINUED]}, coming soon {counts[STATE_COMING_SOON]}, "
+        f"unknown status {counts[STATE_UNKNOWN]}"
     )
     decision = (
-        "Sell only available items. Coming soon has no price. "
-        "Discontinued stock is not for sale"
+        "Sell only available items. Coming soon, discontinued, and an unknown status "
+        "have no price"
     )
     return finding, decision, "coming-soon"
 

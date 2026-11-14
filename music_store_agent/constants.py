@@ -80,6 +80,8 @@ STATE_AVAILABLE = "available"
 STATE_OUT_OF_STOCK = "out_of_stock"
 STATE_DISCONTINUED = "discontinued"
 STATE_COMING_SOON = "coming_soon"
+STATE_UNKNOWN = "unknown"
+BLACK_FRIDAY = "Black Friday"
 
 SORT_PRICE_ASC = "price_asc"
 SORT_PRICE_DESC = "price_desc"
