@@ -4,7 +4,12 @@ import re
 import unicodedata
 from decimal import Decimal
 
-from music_store_agent.constants import CENT, COUNTRY_CODE, PHONE_MIN_DIGITS
+from music_store_agent.constants import (
+    CENT,
+    COUNTRY_CODE,
+    PHONE_MIN_DIGITS,
+    PHONE_NATIONAL_MAX_DIGITS,
+)
 
 _UNITS = {
     "um": 1,
@@ -95,19 +100,19 @@ def emails_match(stored: str, given: str) -> bool:
 
 
 def phones_match(stored: str, given: str) -> bool:
-    left = digits(stored)
-    right = digits(given)
+    left = national_phone(stored)
+    right = national_phone(given)
     if len(left) < PHONE_MIN_DIGITS or len(right) < PHONE_MIN_DIGITS:
         return False
-    if left == right:
-        return True
-    return _with_country(left) == right or left == _with_country(right)
+    return left == right
 
 
-def _with_country(number: str) -> str:
-    if number.startswith(COUNTRY_CODE):
-        return number
-    return COUNTRY_CODE + number
+def national_phone(text: str) -> str:
+    """DDD plus number. Drops a trunk 0 and the 55 country code, so DDD 55 still works."""
+    number = digits(text).lstrip("0")
+    if len(number) > PHONE_NATIONAL_MAX_DIGITS and number.startswith(COUNTRY_CODE):
+        return number[len(COUNTRY_CODE) :]
+    return number
 
 
 def format_brl(amount: Decimal) -> str:

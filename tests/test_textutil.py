@@ -26,6 +26,15 @@ def test_full_phone_matches_and_last_digits_do_not() -> None:
     assert not phones_match(LUCAS, "99812-3456")
 
 
+def test_area_code_55_and_a_trunk_zero_still_match() -> None:
+    santa_maria = "(55) 99123-4567"
+    assert phones_match(santa_maria, "+55 55 99123-4567")
+    assert phones_match(santa_maria, "5599123-4567")
+    assert phones_match(LUCAS, "0 67 99812-3456")
+    assert phones_match(LUCAS, "+55 0 67 99812-3456") is False
+    assert not phones_match(santa_maria, "+55 67 99123-4567")
+
+
 def test_email_is_exact_after_casefold() -> None:
     assert emails_match("Ana@Jmail.com", "ana@jmail.com")
     assert not emails_match("ana@jmail.com", "ana@jmail.com.br")
