@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import copy
 import time
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -12,8 +13,12 @@ from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 import evals.run as run_module
+from evals import stamp
 from evals.run import _case, _one_pass, _report, main
 from evals.score import score_case
+from evals.stamp import reference_day
+from music_store_agent.clock import pinned_day
+from music_store_agent.db import last_order_date, load_database
 from music_store_agent.failover import model_chain
 from music_store_agent.quality import render
 
@@ -139,3 +144,20 @@ def test_case_ids_are_unique_and_the_report_points_at_them() -> None:
         if not line.startswith("|") or len(cells) < 3 or cells[-1] in {"Eval id", "---"}:
             continue
         assert cells[-1] == "unit" or cells[-1] in ids, cells[-1]
+
+
+def test_the_reference_day_comes_from_the_data_and_the_report_is_stamped(monkeypatch) -> None:
+    conn = load_database()
+    assert reference_day() == pinned_day(last_order_date(conn))
+    report = _report([], argparse.Namespace(stub=True, model=None, runs=1))
+    assert f"Commit: {stamp.git_commit()}." in report
+    assert f"Reference date: {reference_day().isoformat()}." in report
+    assert "Written at: " in report
+    monkeypatch.setattr(stamp, "last_order_date", lambda _conn: date(2027, 1, 10))
+    stamp.reference_day.cache_clear()
+    try:
+        assert reference_day() == date(2027, 1, 11)
+    finally:
+        monkeypatch.undo()
+        stamp.reference_day.cache_clear()
+    assert reference_day() == pinned_day(last_order_date(conn))
