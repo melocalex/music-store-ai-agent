@@ -1,6 +1,7 @@
 """Load the store CSVs into SQLite once, then read with bounded queries."""
 
 import csv
+import os
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -60,8 +61,6 @@ CREATE TABLE promotions (
 
 
 def data_dir() -> Path:
-    import os
-
     override = os.environ.get(DATA_ENV)
     if override:
         return Path(override)
