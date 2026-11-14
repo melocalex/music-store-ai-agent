@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 
+from music_store_agent.constants import LANDLINE_PHONE, PROVIDER_ERROR_MESSAGE, WHATSAPP_PHONE
 from music_store_agent.textutil import (
     amounts_in_text,
     brands_in,
@@ -102,3 +103,16 @@ def test_mask_pii_hides_contacts_and_keeps_other_numbers() -> None:
     assert masked.count("[phone]") == 2
     kept = "Pedido 12345, rastreio BRAB1234567BR, data 2026-03-23, R$ 1.749,00, 6x"
     assert mask_pii(kept) == kept
+
+
+def test_mask_pii_keeps_the_store_numbers_and_still_hides_the_customer() -> None:
+    shown = mask_pii(f"{PROVIDER_ERROR_MESSAGE} Cliente: (67) 99812-3456.")
+    assert f"WhatsApp {WHATSAPP_PHONE}." in shown
+    assert "WhatsApp ([phone]" not in shown
+    assert "99812" not in shown
+    assert shown.count("[phone]") == 1
+    for variant in ("+55 67 3321-4500", "067 3321-4500", "6733214500", "(67) 3341-4444"):
+        assert mask_pii(f"Ligue {variant}.") == f"Ligue {variant}."
+    assert mask_pii(f"Fixo {LANDLINE_PHONE}, cliente +55 67 99812-3456") == (
+        f"Fixo {LANDLINE_PHONE}, cliente [phone]"
+    )

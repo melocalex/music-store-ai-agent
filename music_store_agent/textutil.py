@@ -7,9 +7,14 @@ from decimal import Decimal
 from music_store_agent.constants import (
     CENT,
     COUNTRY_CODE,
+    LANDLINE_PHONE,
     PHONE_MIN_DIGITS,
     PHONE_NATIONAL_MAX_DIGITS,
+    WHATSAPP_PHONE,
 )
+
+# The store's own numbers are public contacts, not customer data, so masking keeps them.
+_STORE_PHONES = (WHATSAPP_PHONE, LANDLINE_PHONE)
 
 _UNITS = {
     "um": 1,
@@ -300,12 +305,16 @@ def parse_pt_number(words: list[str]) -> int | None:
 
 
 def mask_pii(text: str) -> str:
+    """Mask customer emails and phones. The store's WhatsApp and landline stay readable."""
     masked = _EMAIL.sub("[email]", text)
 
     def _phone(match: re.Match[str]) -> str:
-        if len(digits(match.group(0))) >= PHONE_MIN_DIGITS:
+        found = match.group(0)
+        if any(phones_match(store, found) for store in _STORE_PHONES):
+            return found
+        if len(digits(found)) >= PHONE_MIN_DIGITS:
             return "[phone]"
-        return match.group(0)
+        return found
 
     return _PHONE_CANDIDATE.sub(_phone, masked)
 
