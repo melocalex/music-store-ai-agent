@@ -111,3 +111,19 @@ def test_a_refused_count_ledgers_its_floor_and_the_largest_plan() -> None:
     beyond = Ledger()
     assert "Parcela mínima" not in quote_text(c40, 1, PAYMENT_CREDIT, 13, True, beyond)
     assert beyond.rule_kinds(floor) == set()
+
+
+def test_two_units_of_a_promo_item_ledger_the_unit_price() -> None:
+    ht100 = _product("HT-100")
+    ledger = Ledger()
+    text = quote_text(ht100, 2, PAYMENT_CREDIT, 1, True, ledger)
+    unit = effective_price(ht100)
+    total = unit * 2
+    assert format_brl(unit) in text
+    assert ledger.product_has(ht100.product_id, unit)
+    reply = f"Duas unidades do HT-100 saem por {format_brl(total)}, ou {format_brl(unit)} cada."
+    quotes = [
+        PriceQuote(product_id=ht100.product_id, amount=total),
+        PriceQuote(product_id=ht100.product_id, amount=unit),
+    ]
+    assert grounding_gap(reply, quotes, ledger).ok
