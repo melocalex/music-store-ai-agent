@@ -360,6 +360,9 @@ def _money(raw: str | None) -> Decimal | None:
     if raw is None or not str(raw).strip():
         return None
     try:
-        return parse_amount(raw)
+        amount = parse_amount(raw)
     except ValueError as error:
         raise ModelRetry("max_price precisa ser um valor em reais, por exemplo 1000.") from error
+    if amount <= 0:
+        raise ModelRetry("max_price precisa ser maior que zero, por exemplo 1000.")
+    return amount
