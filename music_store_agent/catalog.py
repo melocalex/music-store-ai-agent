@@ -119,6 +119,11 @@ _STOP = frozenset(
     "mostre mostrar liste listar gostaria loja instrumento instrumentos show list".split()
 )
 _WIND_NAMES = frozenset({"Instrumentos de Sopro (Madeiras)", "Instrumentos de Sopro (Metais)"})
+# "6 cordas" is a string count, not the word "cordas" in the 7-string names. A violão or guitar
+# whose name carries no count has the standard six.
+_STRING_COUNT = re.compile(r"\b(\d{1,2})\s*cordas?\b")
+_STANDARD_STRINGS = 6
+_SIX_STRING_FAMILIES = frozenset({"Violões", "Guitarras"})
 
 
 @dataclass(frozen=True)
@@ -244,13 +249,15 @@ def search_catalog(products: tuple[Product, ...], request: CatalogQuery, ledger:
         if family is None:
             names = ", ".join(sorted({product.category for product in products}))
             return f"Não conheço a categoria {request.category}. Use uma destas: {names}."
-    chosen, tokens, conflict = _interpret(request.text, family)
+    strings, text = _string_count(request.text)
+    chosen, tokens, conflict = _interpret(text, family)
     if conflict:
         return "Há mais de uma família nesse pedido. Diga se é violão, guitarra, baixo ou ukulele."
     ignored = [token for token in tokens if token not in _vocabulary(products) | _SORT_WORDS]
     if ignored and len(ignored) == len(tokens) and chosen is None:
         return _not_in_catalog(products, ignored)
     matched = _filter(products, chosen, tokens, request.max_price, sellable_only=True)
+    matched = [product for product in matched if _has_strings(product, strings)]
     ordered = _sort(matched, _sort_order(request))
     text = _page(ordered, request.offset, ledger, chosen)
     if ignored:
@@ -289,13 +296,33 @@ def find_products(
         hits = [product for product in products if codes & code_tokens(product.name)]
         if hits:
             return hits
-    chosen, tokens, conflict = _interpret(query, None)
+    strings, text = _string_count(query)
+    chosen, tokens, conflict = _interpret(text, None)
     if conflict:
         return []
     tokens = [token for token in tokens if token in _vocabulary(products)]
-    if chosen is None and not tokens:
+    if chosen is None and not tokens and strings is None:
         return []
-    return _filter(products, chosen, tokens, None, sellable_only=False)
+    pool = _filter(products, chosen, tokens, None, sellable_only=False)
+    return [product for product in pool if _has_strings(product, strings)]
+
+
+def _string_count(text: str) -> tuple[int | None, str]:
+    """The string count asked for, if any, and the text without it."""
+    folded = fold(text)
+    match = _STRING_COUNT.search(folded)
+    if match is None:
+        return None, text
+    return int(match.group(1)), folded[: match.start()] + folded[match.end() :]
+
+
+def _has_strings(product: Product, strings: int | None) -> bool:
+    if strings is None:
+        return True
+    named = _STRING_COUNT.search(fold(product.name))
+    if named is not None:
+        return int(named.group(1)) == strings
+    return strings == _STANDARD_STRINGS and product.category in _SIX_STRING_FAMILIES
 
 
 def _id_in(query: str) -> int | None:
