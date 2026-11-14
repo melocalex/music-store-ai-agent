@@ -33,11 +33,14 @@
       stub:
         calls:
           - {tool: quote_offer, args: {query: "C40", payment: credit, installments: 10}}
-        reply: Em 10x não dá. Para o C40 o máximo é 6x. Quer que eu calcule em 6x?
+        reply: >-
+          Em 10x não dá: a parcela mínima nessa faixa é R$ 100,00.
+          Para o C40 o máximo é 6x, com a primeira parcela de R$ 100,00 e cinco de R$ 99,98.
+          Quer seguir em 6x?
       expect:
         tools: [{tool: quote_offer, args: {query: "C40", payment: credit, installments: 10}}]
-        tool_text: {contains: ["10x não é permitido", "Máximo: 6x"]}
-        amounts: {absent: ["59.99"]}
+        tool_text: {contains: ["10x não é permitido", "Máximo: 6x", "amount=100.00", "99.98"]}
+        amounts: {present: ["100.00", "99.98"], absent: ["59.99"]}
         reply_all: ["6x"]
     - prompt: E em 6x?
       stub:

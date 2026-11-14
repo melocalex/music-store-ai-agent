@@ -7,21 +7,24 @@ from music_store_agent.constants import (
     CASH_INSTALLMENTS,
     CASH_PAYMENTS,
     FREIGHT_FREE_FROM,
+    INSTALLMENT_MAX,
     PAYMENT_CREDIT,
     PAYMENT_PIX,
     PAYMENT_SPLIT,
     SPLIT_PAYMENT_ABOVE,
 )
-from music_store_agent.ledger import FREIGHT, THRESHOLD, Ledger
+from music_store_agent.ledger import FLOOR, FREIGHT, THRESHOLD, Ledger
 from music_store_agent.money import (
     Parcels,
     decide_freight,
     decide_installments,
     line_total,
     max_installments,
+    parcel_floor,
     pix_price,
     quantity_error,
     split_allowed,
+    split_parcels,
 )
 from music_store_agent.textutil import format_amount, format_brl
 
@@ -96,9 +99,24 @@ def _installment_line(
         return "Crédito em 1x é à vista."
     decision = decide_installments(merchandise, installments)
     if not decision.allowed or decision.parcels is None:
-        ceiling = max_installments(merchandise)
-        return f"{installments}x não é permitido ({decision.reason}). Máximo: {ceiling}x."
+        return _refusal(product, merchandise, installments, decision.reason, ledger)
     return _parcel_text(product, decision.parcels, ledger)
+
+
+def _refusal(
+    product: Product, merchandise: Decimal, installments: int, reason: str, ledger: Ledger
+) -> str:
+    """The refused count, its floor as a rule value, and the parcels of the largest plan."""
+    ceiling = max_installments(merchandise)
+    lines = [f"{installments}x não é permitido ({reason}). Máximo: {ceiling}x."]
+    if CASH_INSTALLMENTS < installments <= INSTALLMENT_MAX:
+        floor = parcel_floor(installments)
+        ledger.add_policy(floor, FLOOR)
+        lines.append(f"Parcela mínima nessa faixa: product_id=null amount={format_amount(floor)}.")
+    if ceiling > CASH_INSTALLMENTS:
+        plan = _parcel_text(product, split_parcels(merchandise, ceiling), ledger)
+        lines.append(f"Plano máximo: {plan}")
+    return " ".join(lines)
 
 
 def _parcel_text(product: Product, parcels: Parcels, ledger: Ledger) -> str:

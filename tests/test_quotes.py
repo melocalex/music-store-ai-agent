@@ -1,9 +1,12 @@
 """Offer text follows promo, PIX, and freight rules."""
 
+from decimal import Decimal
+
 from music_store_agent.catalog import effective_price, find_products, is_sellable, load_catalog
 from music_store_agent.constants import FREIGHT_FLAT, PAYMENT_CREDIT, PAYMENT_PIX, TIER_MID_MAX
 from music_store_agent.db import load_database
-from music_store_agent.ledger import Ledger
+from music_store_agent.guard import PriceQuote, grounding_gap
+from music_store_agent.ledger import FLOOR, Ledger
 from music_store_agent.money import split_parcels
 from music_store_agent.orders import Identity, verify
 from music_store_agent.quotes import quote_text
@@ -81,3 +84,30 @@ def test_unknown_payment_is_named_and_not_priced() -> None:
     text = quote_text(_product("C40"), 1, "bitcoin", 1, True, ledger)
     assert "Forma de pagamento desconhecida" in text
     assert "bitcoin" not in text.split("\n")[0]
+
+
+def test_a_refused_count_ledgers_its_floor_and_the_largest_plan() -> None:
+    c40 = _product("C40")
+    ledger = Ledger()
+    text = quote_text(c40, 1, PAYMENT_CREDIT, 10, True, ledger)
+    largest = split_parcels(effective_price(c40), TIER_MID_MAX)
+    floor = Decimal("100.00")
+    assert "Máximo: 6x" in text
+    assert "amount=100.00" in text and format_brl(largest.rest) in text
+    assert ledger.rule_kinds(floor) == {FLOOR}
+    assert ledger.product_has(c40.product_id, largest.first)
+    assert ledger.product_has(c40.product_id, largest.rest)
+    showcase = (
+        "Em 10x não dá: a parcela mínima nessa faixa é R$ 100,00. "
+        f"Para o C40 o máximo é 6x, com a primeira parcela de {format_brl(largest.first)} "
+        f"e cinco de {format_brl(largest.rest)}."
+    )
+    quotes = [
+        PriceQuote(amount=floor),
+        PriceQuote(product_id=c40.product_id, amount=largest.first),
+        PriceQuote(product_id=c40.product_id, amount=largest.rest),
+    ]
+    assert grounding_gap(showcase, quotes, ledger).ok
+    beyond = Ledger()
+    assert "Parcela mínima" not in quote_text(c40, 1, PAYMENT_CREDIT, 13, True, beyond)
+    assert beyond.rule_kinds(floor) == set()
