@@ -250,25 +250,26 @@ def explain_after_sales(
     ordered_on = order.ship.ordered_on
     delivered = order.pay.status not in OPEN_DELIVERY_STATUSES
     lines = [
-        defect_line(ordered_on, today),
+        defect_line(ordered_on, today, delivered),
         receipt_line("Garantia legal", LEGAL_WARRANTY_DAYS, ordered_on, today, delivered),
         f"Garantia do fabricante: {FACTORY_WARRANTY}.",
         receipt_line(
             "Arrependimento, só em compra online", REGRET_DAYS, ordered_on, today, delivered
         ),
-        preference_line(ordered_on, today),
+        preference_line(ordered_on, today, delivered),
         "Não aprovo a solicitação. A equipe confirma.",
     ]
     return AfterSales("\n".join(lines), True)
 
 
-def defect_line(ordered_on: date, today: date) -> str:
+def defect_line(ordered_on: date, today: date, delivered: bool) -> str:
+    """An order still on its way has no product to exchange yet, whatever the date says."""
+    head = f"Troca por defeito: {DEFECT_EXCHANGE_DAYS} dias da compra ({ordered_on.isoformat()})."
+    if not delivered:
+        return f"{head} O pedido ainda não foi entregue. Se chegar com defeito, a equipe avalia."
     elapsed = (today - ordered_on).days
     state = "dentro do prazo" if elapsed <= DEFECT_EXCHANGE_DAYS else "fora do prazo"
-    return (
-        f"Troca por defeito: {DEFECT_EXCHANGE_DAYS} dias da compra ({ordered_on.isoformat()}). "
-        f"Dias passados: {elapsed}. Situação: {state}."
-    )
+    return f"{head} Dias passados: {elapsed}. Situação: {state}."
 
 
 def receipt_line(label: str, days: int, ordered_on: date, today: date, delivered: bool) -> str:
@@ -285,13 +286,15 @@ def receipt_line(label: str, days: int, ordered_on: date, today: date, delivered
     )
 
 
-def preference_line(ordered_on: date, today: date) -> str:
+def preference_line(ordered_on: date, today: date, delivered: bool) -> str:
     """The manual gives 7 days without saying from when. Inside 7 days of purchase, both agree."""
     elapsed = (today - ordered_on).days
     head = (
         f"Troca por preferência: {PREFERENCE_DAYS} dias, se houver o produto desejado. "
         "O manual não diz se contam da compra ou do recebimento."
     )
+    if not delivered:
+        return f"{head} O pedido ainda não foi entregue, então não há produto para trocar ainda."
     if elapsed <= PREFERENCE_DAYS:
         return f"{head} A compra foi há {elapsed} dias, então o prazo vale nas duas leituras."
     return f"{head} A compra foi há {elapsed} dias. Peça a data de recebimento."
