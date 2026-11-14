@@ -12,7 +12,7 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-`requirements.txt` pins the three runtime packages for hosting: `pydantic`, `pydantic-ai-slim[google]`, and `streamlit`. `pyproject.toml` adds the dev tools: `pytest`, `ruff`, and `pyyaml`.
+`requirements.txt` pins the three runtime packages for hosting: `pydantic`, `pydantic-ai-slim[google]`, and `streamlit`. `requirements-dev.txt` pins the dev tools: `pytest`, `pyyaml`, and `ruff`. `pyproject.toml` keeps compatible ranges for a local install.
 
 ## Check it offline
 
