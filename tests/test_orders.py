@@ -131,8 +131,8 @@ def test_a_cancelled_order_shows_its_stored_reason() -> None:
 
 def test_defect_window_is_inclusive_on_day_thirty() -> None:
     bought = date(2026, 1, 1)
-    inside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS))
-    outside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS + 1))
+    inside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS), True)
+    outside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS + 1), True)
     assert "dentro do prazo" in inside
     assert "fora do prazo" in outside
 
@@ -164,6 +164,25 @@ def test_order_seven_states_the_windows() -> None:
     assert result.open_to_request
 
 
+def test_an_order_still_on_its_way_has_no_exchange_window_yet() -> None:
+    conn = load_database()
+    identity = Identity()
+    order = load_order(conn, 8)
+    assert order.pay.status == "shipped" and is_late(order, TODAY)
+    verify(identity, conn, 8, order.buyer.email, None)
+    text = explain_after_sales(identity, conn, 8, TODAY).text
+    assert "fora do prazo" not in text
+    assert "Peça a data de recebimento" not in text
+    assert "Peça essa data" not in text
+    defect, preference = (
+        line
+        for line in text.splitlines()
+        if line.startswith(("Troca por defeito", "Troca por pref"))
+    )
+    assert "ainda não foi entregue" in defect
+    assert "ainda não foi entregue" in preference
+
+
 def test_late_starts_the_day_after_the_estimate() -> None:
     conn = load_database()
     order = load_order(conn, 8)
@@ -176,8 +195,8 @@ def test_late_starts_the_day_after_the_estimate() -> None:
 
 def test_preference_window_states_that_its_start_is_unclear() -> None:
     bought = date(2026, 1, 1)
-    inside = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS))
-    after = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS + 1))
+    inside = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS), True)
+    after = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS + 1), True)
     assert "nas duas leituras" in inside
     assert "Peça a data de recebimento" in after
     assert "não diz se contam da compra ou do recebimento" in inside
