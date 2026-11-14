@@ -8,9 +8,8 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
-from music_store_agent.agent import build_agent
+from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
-from music_store_agent.constants import DEFAULT_MODEL
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import make_deps
 from pydantic_ai.messages import ModelMessage
@@ -125,7 +124,7 @@ def main() -> int:
     if not os.environ.get("GOOGLE_API_KEY"):
         print("Set GOOGLE_API_KEY to generate transcripts. Nothing here is invented.")
         return 2
-    model = os.environ.get("MODEL", DEFAULT_MODEL)
+    model = model_id()
     asyncio.run(_write_all(model))
     print(OUT_DIR)
     return 0
