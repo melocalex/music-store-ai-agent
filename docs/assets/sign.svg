@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" role="img" aria-labelledby="sign-title">
+  <title id="sign-title">Empório da Música</title>
+  <circle cx="28" cy="28" r="27" fill="#1F4B3A"/>
+  <circle cx="28" cy="28" r="20" fill="none" stroke="#E7C56A" stroke-width="2.5"/>
+  <circle cx="28" cy="28" r="14" fill="#10291F"/>
+  <g stroke="#E7C56A" stroke-width="1.2" stroke-opacity="0.9">
+    <line x1="6" y1="23" x2="50" y2="23"/>
+    <line x1="6" y1="28" x2="50" y2="28"/>
+    <line x1="6" y1="33" x2="50" y2="33"/>
+  </g>
+</svg>

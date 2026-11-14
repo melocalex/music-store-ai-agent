@@ -1,0 +1,102 @@
+# Architecture
+
+One Pydantic AI agent on Gemini, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
+
+## Turn flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor C as Customer
+  participant P as Page or CLI
+  participant R as run_turn
+  participant A as Agent (Gemini)
+  participant T as Tools
+  participant L as Ledger
+  participant G as Price check
+  C->>P: question
+  P->>R: message, history, turn count
+  R->>R: session cap, input size, daily cap
+  R->>A: run
+  loop until a final reply
+    A->>T: tool call with typed arguments
+    T->>L: amounts, percents, and product names it printed
+    T-->>A: short text
+  end
+  A->>G: message and quotes
+  alt every amount and percent grounded
+    G-->>R: reply
+  else not grounded
+    G-->>A: retry, up to two times
+    R-->>C: safe message and a handoff
+  end
+  R-->>P: reply, quotes, this turn's tool calls
+  P-->>C: masked text
+```
+
+`run_turn` in `music_store_agent/run.py` owns the failures. A provider error becomes a fixed message. A turn in which the price check fired and the model never recovered becomes the safe price message and a `price_check` handoff. Any other agent failure becomes a short "please rephrase" message with no handoff.
+
+## Tools
+
+The tool list is the boundary. Each tool returns short Portuguese text, and every number in it comes from SQLite, the manual, or the calculator.
+
+| Tool | Arguments | Returns | Writes |
+|---|---|---|---|
+| `search_catalog` | `query`, `category`, `max_price`, `sort_by` (`price_asc`, `price_desc`, `name`), `offset` | up to five sellable rows and the match count | no |
+| `get_product` | `query` or `product_id` | one model with state, price, PIX, promotion, specs; or a list of matches with their state | no |
+| `quote_offer` | `query` (code, name, or id), `quantity`, `payment` (`pix`, `debit`, `credit`, `boleto`, `pix_and_card`), `installments`, `destination` (`campo_grande`, `other`) | an offer from the calculator, or the reason it cannot be offered | no |
+| `list_active_promotions` | none | active promotions with original price and percent, and the Black Friday status | no |
+| `consult_policy` | `sections` (enum of the ten manual sections) | the whole sections | no |
+| `verify_customer` | `order_id`, `email`, `phone` | confirmation, a generic failure, a request for the phone, or the lockout | a handoff at lockout |
+| `get_order` | `order_id` | status, payment, stored total, items with quantity, tracking, late estimate | no |
+| `explain_after_sales` | `order_id`, `open_request` | exchange, warranty, regret, and preference windows | a handoff when `open_request` is true |
+| `check_hours` | `day` (`YYYY-MM-DD` or `DD/MM`) | that day's hours, holidays, and open or closed now | no |
+| `handoff_to_human` | `reason` (enum), `summary` | the confirmation and when the team replies | a handoff |
+
+Pydantic turns the `Literal` arguments into enums in the tool schema, so a value such as `"Campo Grande"` is rejected and the model retries with `campo_grande`.
+
+## Modules
+
+| Module | Holds |
+|---|---|
+| `agent.py` | the agent, the tool wrappers, the model id check, and the output validator |
+| `run.py` | one turn: caps, the run, and the failure messages |
+| `catalog.py` | product states, search, code matching, product text, promotions |
+| `quotes.py`, `money.py` | the offer text and the `Decimal` rules for PIX, installments, freight, and quantity |
+| `guard.py`, `ledger.py` | the price check and the record of what tools returned |
+| `orders.py` | order lookup, identity, and the after-sales windows |
+| `clock.py`, `hours.py` | the store clock, holidays, and the hours answer |
+| `policies.py`, `manual.md` | the manual, loaded by section |
+| `prompts.py` | conduct: tone, quoting rules, when to hand off |
+| `handoff.py`, `usage.py` | the two local writes |
+| `quality.py` | the data-quality report |
+| `constants.py` | every money, policy, and cap value |
+
+## Data
+
+The six CSVs load once into an in-memory SQLite database, which then switches to `PRAGMA query_only`. Prices are stored as text and read as `Decimal`. Every list query has a `LIMIT`, queries are parameterised, none runs inside a loop, and an order lookup reads that one order by id.
+
+## The ledger
+
+Each tool records what it printed:
+
+- A price, a PIX value, a line total, or an installment goes under its product id, with the product name.
+- A rule value goes in the policy set: freight, a floor, the budget the customer gave, a stored order total, any amount in a manual section.
+- Every percent printed by a catalog, quote, promotion, or policy tool goes in the percent set.
+
+The final reply carries `message` and `quotes`, a list of `(product_id, amount)` pairs. The validator in `agent.py` calls `grounding_gap` in `guard.py`, which rejects the reply when:
+
+1. an amount in the message is not in `quotes`;
+2. a quote with a product id is not in that product's bucket, or a quote with a null id is not in the policy set;
+3. a sentence names catalog products and carries an amount quoted for none of them;
+4. a percent in the message never appeared in tool text.
+
+A rejection counts as a firing. It also counts as a true catch when some amount is absent from the whole ledger, which means the model made the number up rather than misattributing a real one.
+
+## Prompt and manual
+
+`manual.md` follows the policy PDF section by section, with notes where the PDF contradicts itself. Conduct lives in `prompts.py`: tone, quoting rules, asking for the receipt date, and when to hand off. A test checks each manual section against facts from the PDF and the constants.
+
+## Local writes
+
+`var/handoffs.jsonl` gets a row from `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback. `var/daily_turns.json` holds the daily counter, written under a lock with `os.replace`. Both are gitignored, and neither holds an email or a phone.
