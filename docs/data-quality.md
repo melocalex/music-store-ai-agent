@@ -6,7 +6,7 @@ Generated from the CSVs. Decisions are what the agent does.
 | --- | --- | --- |
 | 65 products and 9 categories | Answer with the catalog count, not the old 300+ claim | empty-winds |
 | Empty categories: Instrumentos de Sopro (Madeiras); Instrumentos de Sopro (Metais); Cordas Orquestrais | Say the family is listed and has nothing for sale | empty-winds |
-| States: available 61, out of stock 1, discontinued 2, coming soon 1 | Sell only available items. Coming soon has no price. Discontinued stock is not for sale | coming-soon |
+| States: available 61, out of stock 1, discontinued 2, coming soon 1, unknown status 0 | Sell only available items. Coming soon, discontinued, and an unknown status have no price | coming-soon |
 | Description brand conflicts: 135, 137, 139, 140, 142, 144 | Drop the blurb and keep name, price, and specs | unit |
 | Duplicate email on customers 11 and 43 | Email alone never identifies a customer. Verification is order-scoped | other-order |
 | Stored totals differ from item sums: order 3 stored 3450 vs items 3498; order 20 stored 1400 vs items 1488 | Report the stored total and never recompute history | stored-total |

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from music_store_agent.constants import (
+    BLACK_FRIDAY,
     OFFSET_MAX,
     SEARCH_ROW_CAP,
     SIMILAR_CAP,
@@ -17,6 +18,7 @@ from music_store_agent.constants import (
     STATE_COMING_SOON,
     STATE_DISCONTINUED,
     STATE_OUT_OF_STOCK,
+    STATE_UNKNOWN,
     STATUS_ACTIVE,
     STATUS_COMING_SOON,
     STATUS_DISCONTINUED,
@@ -84,6 +86,30 @@ _SPEC_TAGS = {
     ("strings", "steel"): ("steel",),
 }
 _EXPENSIVE = frozenset({"caro", "cara", "caros", "expensive", "top"})
+_STATE_LABELS = {
+    STATE_AVAILABLE: "disponível",
+    STATE_OUT_OF_STOCK: "sem estoque agora",
+    STATE_DISCONTINUED: "fora de linha",
+    STATE_COMING_SOON: "lançamento, ainda sem venda",
+    STATE_UNKNOWN: "fora de venda",
+}
+_SPEC_LABELS = {
+    "top": "tampo",
+    "back_sides": "fundo e laterais",
+    "neck": "braço",
+    "strings": "cordas",
+    "scale": "escala",
+    "electronics": "captação",
+    "color": "cor",
+    "body": "corpo",
+    "shells": "cascos",
+    "pieces": "peças",
+    "hardware": "ferragens",
+    "keys": "teclas",
+    "type": "tipo",
+    "polyphony": "polifonia",
+}
+_SPEC_VALUES = {"yes": "sim", "no": "não", "steel": "aço", "included": "inclusas"}
 _STOP = frozenset(
     "a o os as de do da das dos um uma e ou com sem para por em no na ate the an of to up under "
     "over me my is how much what which any algum alguma quais qual tem voce voces quero preco "
@@ -97,6 +123,7 @@ class PromoSet:
     percent: Decimal | None
     campaign: str | None
     inactive: tuple[str, ...]
+    active: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -134,7 +161,7 @@ def product_state(product: Product) -> str:
         return STATE_OUT_OF_STOCK
     if status == STATUS_ACTIVE and stock > 0:
         return STATE_AVAILABLE
-    return "unknown"
+    return STATE_UNKNOWN
 
 
 def is_sellable(product: Product) -> bool:
@@ -165,7 +192,9 @@ def _choose_promos(items: list[sqlite3.Row]) -> PromoSet:
         return PromoSet(None, None, inactive)
     active.sort(key=lambda row: (-Decimal(row["discount_percent"]), int(row["promotion_id"])))
     winner = active[0]
-    return PromoSet(Decimal(winner["discount_percent"]), str(winner["description"]), inactive)
+    campaigns = tuple(str(row["description"]) for row in active)
+    percent = Decimal(winner["discount_percent"])
+    return PromoSet(percent, str(winner["description"]), inactive, campaigns)
 
 
 def _promo_label(row: sqlite3.Row) -> str:
@@ -426,9 +455,17 @@ def describe_matches(products: tuple[Product, ...], found: list[Product], ledger
         return "Não encontrei esse modelo no catálogo."
     if len(found) > 1:
         lines = [f"Encontrei {len(found)} modelos. Qual deles?"]
-        lines.extend(_hit(product, ledger) for product in found[:SEARCH_ROW_CAP])
+        lines.extend(_match_line(product, ledger) for product in found[:SEARCH_ROW_CAP])
         return "\n".join(lines)
     return describe_one(products, found[0], ledger)
+
+
+def _match_line(product: Product, ledger: Ledger) -> str:
+    """A model that is not for sale is listed with its state and no price."""
+    if is_sellable(product):
+        return _hit(product, ledger)
+    label = _STATE_LABELS[product_state(product)]
+    return f"{product.name} | id {product.product_id} | {product.category} | {label}, sem preço"
 
 
 def describe_one(products: tuple[Product, ...], product: Product, ledger: Ledger) -> str:
@@ -439,7 +476,9 @@ def describe_one(products: tuple[Product, ...], product: Product, ledger: Ledger
         return _unavailable(products, product, ledger, "saiu do catálogo")
     if state == STATE_OUT_OF_STOCK:
         return _unavailable(products, product, ledger, "está sem unidades agora")
-    return _available(product, ledger)
+    if state == STATE_AVAILABLE:
+        return _available(product, ledger)
+    return _unavailable(products, product, ledger, "tem um status que não permite venda")
 
 
 def _coming_soon(products: tuple[Product, ...], product: Product, ledger: Ledger) -> str:
@@ -455,8 +494,8 @@ def _unavailable(
     reason: str,
 ) -> str:
     stock = product.details.stock
-    lines = [f"{product.name} {reason}. Estoque gravado: {stock}. Não está à venda."]
-    lines.append(_table_price(product, ledger))
+    lines = [f"{product.name} {reason}. Estoque gravado: {stock}."]
+    lines.append("Não está à venda, então não cito preço.")
     lines.extend(_similar_lines(products, product, ledger))
     return "\n".join(lines)
 
@@ -476,7 +515,18 @@ def _available(product: Product, ledger: Ledger) -> str:
     blurb = _safe_blurb(product)
     if blurb:
         lines.append(blurb)
+    specs = spec_text(product)
+    if specs:
+        lines.append(specs)
     return "\n".join(lines)
+
+
+def spec_text(product: Product) -> str:
+    parts = [
+        f"{_SPEC_LABELS.get(key, key)} {_SPEC_VALUES.get(value, value)}"
+        for key, value in product.details.specs
+    ]
+    return "Especificações: " + "; ".join(parts) + "." if parts else ""
 
 
 def _table_price(product: Product, ledger: Ledger) -> str:
@@ -525,8 +575,17 @@ def active_promotion_text(products: tuple[Product, ...], ledger: Ledger) -> str:
         for product in products
         if product.promos.percent is not None and is_sellable(product)
     ]
+    black_friday = [
+        product
+        for product in products
+        if any(fold(BLACK_FRIDAY) in fold(campaign) for campaign in product.promos.active)
+    ]
+    if black_friday:
+        status = f"{BLACK_FRIDAY} está ativa em {len(black_friday)} itens."
+    else:
+        status = f"{BLACK_FRIDAY} não está entre as promoções ativas."
     if not active:
-        return "Nenhuma promoção ativa no catálogo. Black Friday não está ativa."
-    lines = ["Promoções ativas. Black Friday não está entre elas."]
+        return f"Nenhuma promoção ativa no catálogo. {status}"
+    lines = [f"Promoções ativas: {len(active)}. {status}"]
     lines.extend(_promo_price(product, ledger) for product in active[:SEARCH_ROW_CAP])
     return "\n".join(lines)

@@ -1,9 +1,14 @@
 """Product states, code matching, and catalog filters."""
 
+from dataclasses import replace
 from decimal import Decimal
 
 from music_store_agent.catalog import (
     CatalogQuery,
+    PromoSet,
+    active_promotion_text,
+    describe_matches,
+    describe_one,
     effective_price,
     find_products,
     is_sellable,
@@ -12,15 +17,17 @@ from music_store_agent.catalog import (
     search_catalog,
 )
 from music_store_agent.constants import (
+    BLACK_FRIDAY,
     SORT_PRICE_ASC,
     STATE_AVAILABLE,
     STATE_COMING_SOON,
     STATE_DISCONTINUED,
     STATE_OUT_OF_STOCK,
+    STATE_UNKNOWN,
 )
 from music_store_agent.db import load_database
 from music_store_agent.ledger import Ledger
-from music_store_agent.textutil import description_conflicts
+from music_store_agent.textutil import description_conflicts, format_brl
 
 
 def _products():
@@ -116,3 +123,45 @@ def test_ids_and_empty_queries() -> None:
     assert find_products(products, "") == []
     assert find_products(products, "quanto custa") == []
 
+
+def test_several_matches_hide_prices_of_unsellable_models() -> None:
+    products = _products()
+    ledger = Ledger()
+    text = describe_matches(products, find_products(products, "Kala barítono"), ledger)
+    coming = _by_id(products, 130)
+    assert format_brl(coming.list_price) not in text
+    assert "lançamento" in text
+    assert 130 not in ledger.by_product
+    assert 128 in ledger.by_product
+
+
+def test_discontinued_and_unknown_states_carry_no_price() -> None:
+    products = _products()
+    ledger = Ledger()
+    bass = _by_id(products, 136)
+    text = describe_one(products, bass, ledger)
+    assert format_brl(bass.list_price) not in text
+    assert 136 not in ledger.by_product
+    c40 = _by_id(products, 81)
+    odd = replace(c40, details=replace(c40.details, status="archived"))
+    assert product_state(odd) == STATE_UNKNOWN
+    assert not is_sellable(odd)
+    unknown = describe_one(products, odd, ledger)
+    assert "não permite venda" in unknown
+    assert 81 not in ledger.by_product
+
+
+def test_specs_are_shown() -> None:
+    products = _products()
+    text = describe_one(products, _by_id(products, 81), Ledger())
+    assert "Especificações:" in text
+    assert "650mm" in text
+
+
+def test_black_friday_status_comes_from_the_data() -> None:
+    products = _products()
+    assert f"{BLACK_FRIDAY} não está" in active_promotion_text(products, Ledger())
+    c40 = _by_id(products, 81)
+    promo = PromoSet(Decimal("20"), BLACK_FRIDAY, (), (BLACK_FRIDAY,))
+    on_sale = replace(c40, promos=promo)
+    assert f"{BLACK_FRIDAY} está ativa em 1" in active_promotion_text((on_sale,), Ledger())
