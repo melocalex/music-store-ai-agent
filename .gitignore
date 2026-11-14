@@ -6,8 +6,7 @@ __pycache__/
 .ruff_cache/
 .streamlit/secrets.toml
 var/
-evals/results/*.md
-examples/transcripts/
+evals/results/stub.md
 *.egg-info/
 dist/
 build/

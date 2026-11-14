@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -88,15 +89,16 @@ async def _write_all(model: str) -> None:
     day = pinned_day(last_order_date(conn))
     commit = git_commit()
     agent = build_agent(model)
-    for script in SCRIPTS:
-        deps = make_deps(
-            conn,
-            today=day,
-            handoff_path=OUT_DIR / "handoffs.jsonl",
-            usage_path=OUT_DIR / "turns.json",
-        )
-        text = await _script(agent, deps, script, model, day, commit)
-        (OUT_DIR / f"{script['title']}.md").write_text(text, encoding="utf-8")
+    with tempfile.TemporaryDirectory() as scratch:
+        for script in SCRIPTS:
+            deps = make_deps(
+                conn,
+                today=day,
+                handoff_path=Path(scratch) / "handoffs.jsonl",
+                usage_path=Path(scratch) / "turns.json",
+            )
+            text = await _script(agent, deps, script, model, day, commit)
+            (OUT_DIR / f"{script['title']}.md").write_text(text, encoding="utf-8")
 
 
 async def _script(
