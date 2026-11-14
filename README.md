@@ -58,18 +58,18 @@ Saw `Pass rate: 28/28`? Then talk to Aria in the terminal or in the Streamlit pa
 
 ## 🧩 Examples
 
-Five scripted conversations run against the live model with `python -m examples.generate`. Each transcript is committed with the model, the reference date, and the commit id in its header.
+Five scripted conversations are defined in [`examples/generate.py`](examples/generate.py). `python -m examples.generate` plays them against the live model and writes one transcript per script, with the model, the reference date, and the commit id in its header.
 
-| Example | Shows | Transcript |
-|---|---|---|
-| Violão budget | a budget search, an electroacoustic follow-up, and 10x refused with the allowed maximum | `examples/transcripts/violao-budget.md` |
-| GD20 and Black Friday | an ended campaign named as ended, then the current price and PIX | `examples/transcripts/gd20-black-friday.md` |
-| Regret | a wrong email, the right one, the receipt date, and a handoff | `examples/transcripts/regret.md` |
-| Address and scope | an address change handed off, Saturday hours, strings, an off-topic question, a discount request | `examples/transcripts/address-and-scope.md` |
-| Warranty tension | order 7 on day 48: exchange closed, legal warranty open, complaint recorded | `examples/transcripts/warranty-tension.md` |
+| Script | What the conversation covers |
+|---|---|
+| `violao-budget` | a budget search, an electroacoustic follow-up, and 10x refused with the allowed maximum |
+| `gd20-black-friday` | an ended campaign named as ended, then the current price and PIX |
+| `regret` | a wrong email, the right one, the receipt date, and a handoff |
+| `address-and-scope` | an address change handed off, Saturday hours, strings, an off-topic question, a discount request |
+| `warranty-tension` | order 7 on day 48: exchange closed, legal warranty open, complaint recorded |
 
-> [!TIP]
-> No transcript is in the repository yet. They land in `examples/transcripts/` after the first live run.
+> [!NOTE]
+> Pending: no transcript is in the repository yet. They need a live model run, and they will land in `examples/transcripts/` when that run happens.
 
 ## ✨ Highlights
 
