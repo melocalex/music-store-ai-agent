@@ -12,6 +12,8 @@ from music_store_agent.constants import (
     MIN_PARCEL_4_TO_6,
     MIN_PARCEL_7_TO_12,
     PIX_PERCENT,
+    QUANTITY_MAX,
+    QUANTITY_MIN,
     SPLIT_PAYMENT_ABOVE,
     TIER_LOW_MAX,
     TIER_MID_MAX,
@@ -22,6 +24,7 @@ from music_store_agent.money import (
     max_installments,
     percent_off,
     pix_price,
+    quantity_error,
     quantize,
     split_allowed,
     split_parcels,
@@ -30,6 +33,7 @@ from music_store_agent.money import (
 C40 = Decimal("599.90")
 LIST_2199 = Decimal("2199.00")
 PROMO_HT = Decimal("1967.18")
+STOCK = 5
 
 
 def test_pix_rounds_half_up() -> None:
@@ -103,3 +107,11 @@ def test_freight_is_free_at_exactly_five_hundred() -> None:
     assert decide_freight(FREIGHT_FREE_FROM, False).kind == "not_quoted"
     assert decide_freight(FREIGHT_FREE_FROM, False).amount is None
 
+
+def test_quantity_limits_and_stock() -> None:
+    assert quantity_error(QUANTITY_MIN, STOCK) is None
+    assert quantity_error(QUANTITY_MIN - 1, STOCK) is not None
+    assert quantity_error(QUANTITY_MAX, QUANTITY_MAX) is None
+    assert quantity_error(QUANTITY_MAX + 1, QUANTITY_MAX + 1) is not None
+    assert quantity_error(STOCK, STOCK) is None
+    assert quantity_error(STOCK + 1, STOCK) is not None
