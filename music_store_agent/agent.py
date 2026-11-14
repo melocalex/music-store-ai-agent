@@ -4,6 +4,8 @@ import os
 from decimal import Decimal
 
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models import Model, parse_model_id
+from pydantic_ai.providers import infer_provider_class
 
 from music_store_agent.catalog import (
     CatalogQuery,
@@ -18,6 +20,7 @@ from music_store_agent.constants import (
     DEFAULT_MODEL,
     DESTINATION_CITY,
     MODEL_ENV,
+    MODEL_PROVIDER,
     OUTPUT_RETRIES,
     RETRY_PRICE,
     TOOL_RETRIES,
@@ -35,10 +38,20 @@ from music_store_agent.textutil import amounts_in_text, parse_amount
 _MANUAL = load_manual()
 
 
-def build_agent(model: str | object | None = None) -> Agent[Deps, AgentReply]:
-    chosen = model if model is not None else os.environ.get(MODEL_ENV, DEFAULT_MODEL)
+def model_id(raw: str | None = None) -> str:
+    """Return a Gemini id the installed Pydantic AI can resolve, or raise at startup."""
+    chosen = (raw if raw is not None else os.environ.get(MODEL_ENV, "")).strip() or DEFAULT_MODEL
+    provider, _name = parse_model_id(chosen)
+    if provider != MODEL_PROVIDER:
+        raise ValueError(f"MODEL={chosen!r} is not a Gemini API id. Use {DEFAULT_MODEL!r}.")
+    infer_provider_class(provider)
+    return chosen
+
+
+def build_agent(model: Model | str | None = None) -> Agent[Deps, AgentReply]:
+    chosen = model if isinstance(model, Model) else model_id(model)
     agent: Agent[Deps, AgentReply] = Agent(
-        chosen,  # type: ignore[arg-type]
+        chosen,
         deps_type=Deps,
         output_type=AgentReply,
         instructions=INSTRUCTIONS,

@@ -3,9 +3,13 @@
 import asyncio
 from datetime import date
 
-from music_store_agent.agent import build_agent
+import pytest
+from music_store_agent.agent import build_agent, model_id
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
+    DEFAULT_MODEL,
+    MODEL_ENV,
+    MODEL_PROVIDER,
     SAFE_PRICE_MESSAGE,
     SESSION_CAP_MESSAGE,
     SESSION_TURN_CAP,
@@ -14,10 +18,28 @@ from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.run import run_turn
 from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models import infer_model
 from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
 PINNED = date(2026, 3, 23)
+
+
+def test_default_model_resolves_in_the_installed_pydantic_ai(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    monkeypatch.delenv(MODEL_ENV, raising=False)
+    resolved = infer_model(model_id())
+    assert isinstance(resolved, GoogleModel)
+    assert f"{MODEL_PROVIDER}:{resolved.model_name}" == DEFAULT_MODEL
+
+
+def test_unknown_model_prefix_fails_at_startup(monkeypatch) -> None:
+    monkeypatch.setenv(MODEL_ENV, "google-gla:gemini-3.5-flash")
+    with pytest.raises(ValueError):
+        build_agent()
+    with pytest.raises(ValueError):
+        model_id("openai:gpt-4o")
 
 
 def _final(message: str, quotes: list[dict[str, object]]) -> ModelResponse:

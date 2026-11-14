@@ -7,7 +7,7 @@
   <a href="https://github.com/melocalex/music-store-ai-agent/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/melocalex/music-store-ai-agent/ci.yml?label=ci"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-2F6F4E"></a>
   <a href="https://ai.pydantic.dev/"><img alt="Pydantic AI" src="https://img.shields.io/badge/pydantic--ai-2.x-E92063"></a>
-  <a href="https://ai.google.dev/"><img alt="Gemini" src="https://img.shields.io/badge/gemini-3.5--flash-8E75C2"></a>
+  <a href="https://ai.google.dev/"><img alt="Gemini" src="https://img.shields.io/badge/gemini-3.8--flash-8E75C2"></a>
 </p>
 
 Aria is the virtual assistant for Empório da Música, a fictional instrument shop in Campo Grande, Mato Grosso do Sul. She answers from the catalog, the order book, and a short manual. A price that no tool returned does not reach the customer.
@@ -60,12 +60,12 @@ You need Python 3.12, [uv](https://docs.astral.sh/uv/) or pip, and a Gemini key 
 ```bash
 uv venv && uv pip install -e ".[dev]"
 export GOOGLE_API_KEY="your-key"
-export MODEL="google-gla:gemini-3.5-flash"
+export MODEL="google:gemini-3.8-flash"
 python -m music_store_agent
 # or: streamlit run app.py
 ```
 
-`MODEL` can be `google-gla:gemini-3.8-flash` or a flash-lite id. The app does not set a low temperature.
+`MODEL` takes any `google:` Gemini id, for example `google:gemini-3.5-flash-lite`. An unknown id stops the app at startup.
 
 ## 💬 Try asking
 
@@ -123,7 +123,7 @@ flowchart LR
 ```bash
 ruff check .
 pytest
-python -m evals.run --runs 3 --model google-gla:gemini-3.5-flash
+python -m evals.run --runs 3 --model google:gemini-3.8-flash
 python -m examples.generate
 ```
 
@@ -141,9 +141,8 @@ Offline, `pytest` never calls a provider. `python -m evals.run --stub` runs the 
 
 | Model | When |
 | --- | --- |
-| `google-gla:gemini-3.5-flash` | Default |
-| `google-gla:gemini-3.8-flash` | Set `MODEL` when you want the newer flash |
-| a flash-lite id | Set `MODEL` when you want the cheaper tier |
+| `google:gemini-3.8-flash` | Default |
+| `google:gemini-3.5-flash-lite` | Set `MODEL` when you want the cheaper tier |
 
 ## ⚠️ Known limitations
 
