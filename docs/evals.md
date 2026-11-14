@@ -70,7 +70,7 @@ The report starts with:
 | Flaky | cases that passed in some runs and failed in others |
 | Median turn latency | wall time per turn, model and tools included |
 | Median model requests per turn | model responses per turn, tool rounds included |
-| Validator fired / true catches | replies the price check rejected, and how many carried an amount no tool returned at all |
+| Validator fired / true catches | replies the price check rejected, retries included, and the turns whose reply carried an amount no tool printed at all, counted once per turn |
 
 Then one line per case with its failures.
 

@@ -2,9 +2,11 @@
 
 import math
 import os
+import re
 from decimal import Decimal
 
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
 from pydantic_ai.models import Model, parse_model_id
 from pydantic_ai.providers import infer_provider_class
 from pydantic_ai.settings import ModelSettings
@@ -55,6 +57,7 @@ from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import amounts_in_text, parse_amount, percents_in_text
 
 _MANUAL = load_manual()
+_AMOUNT_FIELD = re.compile(r"amount=(\d+(?:\.\d{1,2})?)")
 
 
 def model_id(raw: str | None = None) -> str:
@@ -164,10 +167,30 @@ def validate_reply(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     gap = grounding_gap(reply.message, reply.quotes, ctx.deps.ledger, names)
     if gap.ok:
         return reply
-    ctx.deps.counters.validator_firings += 1
-    if gap.unknown:
-        ctx.deps.counters.validator_catches += 1
+    counters = ctx.deps.counters
+    counters.validator_firings += 1
+    turn = ctx.run_id or ""
+    if turn not in counters.caught_turns and _invented(reply, ctx.messages):
+        counters.caught_turns.add(turn)
+        counters.validator_catches += 1
     raise ModelRetry(RETRY_PRICE)
+
+
+def _invented(reply: AgentReply, messages: list[ModelMessage]) -> set[Decimal]:
+    """Amounts in the reply that no tool printed anywhere in the conversation.
+
+    A misattributed price, a floor the ledger missed, or a unit price printed but not ledgered
+    was still shown by a tool, so it is a firing but not a catch.
+    """
+    shown: set[Decimal] = set()
+    for message in messages:
+        for part in getattr(message, "parts", ()):
+            if isinstance(part, ToolReturnPart):
+                text = part.model_response_str()
+                shown |= amounts_in_text(text)
+                shown |= {parse_amount(raw) for raw in _AMOUNT_FIELD.findall(text)}
+    cited = amounts_in_text(reply.message) | {quote.amount for quote in reply.quotes}
+    return cited - shown
 
 
 def search_products(

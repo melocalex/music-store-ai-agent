@@ -21,8 +21,11 @@ class StorePaths:
 
 @dataclass
 class Counters:
+    """Price-check firings, and turns in which the reply carried an amount no tool printed."""
+
     validator_firings: int = 0
     validator_catches: int = 0
+    caught_turns: set[str] = field(default_factory=set)
 
 
 @dataclass

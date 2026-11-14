@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 from pydantic_ai import ModelRetry
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import infer_model
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import FunctionModel
@@ -14,6 +14,7 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 
 from music_store_agent.agent import (
+    _invented,
     _money,
     breaker_window,
     build_agent,
@@ -33,6 +34,7 @@ from music_store_agent.constants import (
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
     MODEL_TIMEOUT_ENV,
+    OUTPUT_RETRIES,
     PROVIDER_SDK_RETRIES,
     SAFE_PRICE_MESSAGE,
     SESSION_CAP_MESSAGE,
@@ -42,6 +44,8 @@ from music_store_agent.constants import (
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.failover import GuardedModel
+from music_store_agent.guard import AgentReply, grounding_gap
+from music_store_agent.ledger import Ledger
 from music_store_agent.run import run_turn
 
 PINNED = date(2026, 3, 23)
@@ -218,6 +222,36 @@ def test_ungrounded_price_falls_back_without_the_amount(tmp_path) -> None:
     assert "10,00" not in turn.message
     assert deps.counters.validator_catches >= 1
     assert "price_check" in (tmp_path / "handoffs.jsonl").read_text(encoding="utf-8")
+
+
+def test_an_invented_price_counts_one_catch_per_turn_across_retries(tmp_path) -> None:
+    deps = _deps(tmp_path)
+    agent = build_agent(FunctionModel(_ungrounded))
+    asyncio.run(run_turn(agent, deps, "desconto", [], 0))
+    assert deps.counters.validator_firings == OUTPUT_RETRIES + 1
+    assert deps.counters.validator_catches == 1
+    asyncio.run(run_turn(agent, deps, "e agora?", [], 1))
+    assert deps.counters.validator_catches == 2
+
+
+def test_an_amount_a_tool_printed_is_not_a_catch() -> None:
+    shown = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                tool_name="quote_offer",
+                content=(
+                    "10x não é permitido (parcela mínima de R$ 100,00 nessa faixa). "
+                    "Plano máximo: 6x de product_id=81 amount=99.98."
+                ),
+                tool_call_id="call-1",
+            )
+        ]
+    )
+    reply = AgentReply(message="A parcela mínima é R$ 100,00, e em 6x fica R$ 99,98.")
+    assert _invented(reply, [shown]) == set()
+    assert grounding_gap(reply.message, [], Ledger()).unknown == ("99.98", "100.00")
+    made_up = AgentReply(message="Faço por R$ 10,00.")
+    assert _invented(made_up, [shown]) == {Decimal("10.00")}
 
 
 def test_session_cap_does_not_call_the_model(tmp_path) -> None:
