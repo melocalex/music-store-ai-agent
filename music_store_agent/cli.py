@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import os
+import sys
 from datetime import date
 
 from pydantic_ai.messages import ModelMessage
@@ -18,9 +19,26 @@ from music_store_agent.textutil import mask_pii
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
-def main(argv: list[str] | None = None) -> None:
+NO_KEY_MESSAGE = (
+    "Defina GOOGLE_API_KEY para conversar com o modelo, "
+    "ou rode python -m music_store_agent --stub para testar sem chave."
+)
+EXIT_NO_KEY = 2
+EXIT_BAD_SETTING = 3
+
+
+def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    asyncio.run(_chat(args))
+    if not args.stub and not (os.environ.get("GOOGLE_API_KEY") or "").strip():
+        print(NO_KEY_MESSAGE, file=sys.stderr)
+        return EXIT_NO_KEY
+    try:
+        asyncio.run(_chat(args))
+    except ValueError as error:
+        # A model id, timeout, breaker window, or --today the app cannot use.
+        print(error, file=sys.stderr)
+        return EXIT_BAD_SETTING
+    return 0
 
 
 def _parser() -> argparse.ArgumentParser:

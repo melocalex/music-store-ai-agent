@@ -78,6 +78,8 @@ streamlit run app.py               # the same assistant in the browser
 | `--real-clock` | the real Campo Grande clock |
 | `--stub` | no provider call, only a canned greeting |
 
+Without `GOOGLE_API_KEY`, the terminal chat prints one line that suggests `--stub` and exits with code 2. A model id, timeout, or breaker window it cannot use prints one line and exits with code 3.
+
 ## Clock
 
 Business rules read a store clock in `America/Campo_Grande`.
