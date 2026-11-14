@@ -20,6 +20,7 @@ None of these calls a model provider.
 
 ```bash
 ruff check .                         # the smell gate
+ruff format --check .                # formatting
 pytest                               # unit and agent tests with scripted models
 python -m evals.run --stub --runs 1  # 28 scenarios through the real tools and price check
 python -m music_store_agent --stub   # the terminal chat with a canned greeting

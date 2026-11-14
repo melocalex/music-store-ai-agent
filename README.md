@@ -21,7 +21,7 @@
 |:-:|---|---|
 | **1** | git | the code, the store CSVs, and the policy PDF |
 | **2** | Python 3.12 | the app, the CLI, and the test tools |
-| **3** | nothing else | lint, 128 tests, and 28 scenarios through the real tools, all offline |
+| **3** | nothing else | lint, format, 171 tests, and 28 scenarios through the real tools, all offline |
 
 ```bash
 # 1. Clone
@@ -31,7 +31,7 @@ git clone https://github.com/melocalex/music-store-ai-agent.git && cd music-stor
 python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 
 # 3. Check it offline
-ruff check . && pytest && python -m evals.run --stub --runs 1
+ruff check . && ruff format --check . && pytest && python -m evals.run --stub --runs 1
 ```
 
 Saw `Pass rate: 28/28`? Then talk to Aria in the terminal or in the Streamlit page: [docs/setup.md](docs/setup.md) shows both.
@@ -173,9 +173,7 @@ music-store-ai-agent/
 
 ## 🏗️ How this was built
 
-The design came first, as a written spec of tools, guardrails, and data decisions. The code followed in small commits, each gated by `ruff check .`, `pytest`, and the scenario run. Every money, policy, and identity rule lives in `music_store_agent/constants.py` and is pinned by a test.
-
-Before settling the design, I reviewed public approaches to this same store dataset to compare data-quality findings and guardrails. No code was reused.
+The design came first, as a written spec of tools, guardrails, and data decisions. CI runs `ruff check .` and `pytest` on every push and pull request. Every money, policy, and identity rule lives in `music_store_agent/constants.py`, and the offline suite checks the rules built on those values.
 
 Built with Cursor and Claude Code as development tools.
 
