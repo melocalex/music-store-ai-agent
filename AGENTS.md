@@ -20,7 +20,7 @@ Tool text is short. Catalog search returns at most five rows and says how many m
 
 Load the CSVs into SQLite once. Every list query has a `LIMIT`. Do not run a query inside a loop. Do not open a network call inside a transaction. Prices are stored as text and parsed as `Decimal`.
 
-`handoff_to_human` is the only write. The row goes to a gitignored local file and has no email or phone. Do not log message bodies. Mask email and phone before anything is shown back.
+`handoff_to_human` is the only tool that writes. The app keeps two gitignored local files and nothing else: the handoff log `var/handoffs.jsonl` (appended by `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback) and the daily turn counter `var/daily_turns.json`. Neither holds an email or phone. Do not log message bodies. Mask email and phone before anything is shown back.
 
 ## Secrets and commits
 
