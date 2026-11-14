@@ -188,7 +188,14 @@ def _split_decimal(token: str) -> tuple[str, str, str]:
 
 
 def amounts_in_text(text: str) -> set[Decimal]:
-    found: set[Decimal] = set()
+    found = {value for _start, value in amount_spans(text)}
+    found.update(_word_amounts(text))
+    return found
+
+
+def amount_spans(text: str) -> list[tuple[int, Decimal]]:
+    """Where each amount written in digits starts, with its value. Words are left out."""
+    spans: list[tuple[int, Decimal]] = []
     for match in _MONEY.finditer(text):
         if match.group("bare") and _VERSION_BEFORE.search(text, 0, match.start()):
             continue
@@ -196,9 +203,8 @@ def amounts_in_text(text: str) -> set[Decimal]:
         value = _number_value(token)
         if match.group("pre_mil") or match.group("kilo"):
             value = (value * _THOUSAND).quantize(CENT)
-        found.add(value)
-    found.update(_word_amounts(text))
-    return found
+        spans.append((match.start(), value))
+    return spans
 
 
 def percents_in_text(text: str) -> set[Decimal]:

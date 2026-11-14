@@ -17,6 +17,7 @@ from music_store_agent.ledger import (
     RuleKind,
 )
 from music_store_agent.textutil import (
+    amount_spans,
     amounts_in_text,
     code_tokens,
     fold,
@@ -27,6 +28,10 @@ from music_store_agent.textutil import (
 # A sentence ends at ! ? ; a newline, or a period that is not a decimal point.
 _BOUNDARY = re.compile(r"[!?;\n]|\.(?!\d)")
 _CODE_SPAN = 3
+# "o C40 custa R$ 849,00": a singular price verb right after a product binds the next amount to
+# that product. A plural verb ("custam") or a list ("respectivamente") binds nothing.
+_PRICE_VERB = re.compile(r"\b(?:custa|sai|fica|vale|esta|por|costs|is|for)\b")
+_BINDING_GAP_WORDS = 6
 # A rule value may share a sentence with a product only next to a word of its own kind, so
 # "o frete do C40 é R$ 35,00" passes and "o C40 custa R$ 35,00" does not.
 _KIND_WORDS: dict[RuleKind, tuple[str, ...]] = {
@@ -132,6 +137,7 @@ def _crossed(
         named = _named(sentence, codes)
         if not named:
             continue
+        crossed.extend(_swapped(sentence, owners, codes))
         for amount in sorted(amounts_in_text(sentence)):
             ids = owners.get(amount, set())
             if not ids or not named.isdisjoint(ids):
@@ -141,6 +147,44 @@ def _crossed(
             products = sorted(i for i in ids if i is not None)
             crossed.append(_label(products[0] if products else None, amount))
     return crossed
+
+
+def _swapped(
+    sentence: str, owners: dict[Decimal, set[int | None]], codes: dict[str, set[int]]
+) -> list[str]:
+    """A product price bound by a price verb to the nearest product before it must be its own.
+
+    "O C40 custa R$ 849,00 e o C70 custa R$ 599,90" names both models, so the sentence check
+    alone lets the swap through. Here each amount goes to the product right before it.
+    """
+    folded = fold(sentence)
+    mentions = _mentions(folded, codes)
+    swapped: list[str] = []
+    for start, amount in amount_spans(folded):
+        ids = owners.get(amount, set())
+        before = [mention for mention in mentions if mention[0] <= start]
+        if not ids or None in ids or not before:
+            continue
+        end, nearest = before[-1]
+        gap = folded[end:start]
+        bound = len(gap.split()) <= _BINDING_GAP_WORDS and _PRICE_VERB.search(gap)
+        if bound and nearest.isdisjoint(ids):
+            swapped.append(_label(min(i for i in ids if i is not None), amount))
+    return swapped
+
+
+def _mentions(folded: str, codes: dict[str, set[int]]) -> list[tuple[int, set[int]]]:
+    """Each product named in the text: where the name ends, and which products it names."""
+    words = list(re.finditer(r"[a-z0-9]+", folded))
+    found: list[tuple[int, set[int]]] = []
+    for start in range(len(words)):
+        for size in range(1, _CODE_SPAN + 1):
+            span = words[start : start + size]
+            ids = codes.get("".join(word.group(0) for word in span), set())
+            if ids and len(span) == size:
+                found.append((span[-1].end(), ids))
+    found.sort(key=lambda mention: mention[0])
+    return found
 
 
 def _names_kind(sentence: str, kinds: set[RuleKind]) -> bool:

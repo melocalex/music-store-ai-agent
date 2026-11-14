@@ -154,6 +154,7 @@ music-store-ai-agent/
 |---|---|
 | A reply puts a price in a sentence that names a different product | The check rejects it. After two retries the customer gets a short message and the team gets a handoff |
 | A product is named only by brand, as in "o Takamine" | The sentence check cannot tie the amount to a model, so it relies on the quote's product id |
+| A clause sits between a model and its price, as in "o C40, ao lado do C70, sai por R$ 599,90" | The price is tied to the nearest model before the verb, the C70, so the honest reply is refused and the model rewrites it |
 | A percent written in words, as in "cinco por cento" | The percent check reads digits only |
 | Carnival, Good Friday, or Corpus Christi | Moving holidays are not in the list. Aria says so and hands off |
 | Freight to another city | Not calculated. The team quotes it |
