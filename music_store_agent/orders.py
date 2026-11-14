@@ -18,6 +18,7 @@ from music_store_agent.constants import (
     ORDER_CANCELLED,
     PREFERENCE_DAYS,
     REGRET_DAYS,
+    UNESTIMATED_ORDER_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
 )
@@ -200,6 +201,12 @@ def _public_order(order: OrderRecord, today: date, ledger: Ledger) -> str:
             f"A estimativa {order.ship.estimate} já passou e a situação segue "
             f"{status_label(order.pay.status)}."
         )
+    elif is_stale(order, today):
+        lines.append(
+            f"O pedido foi feito há {(today - order.ship.ordered_on).days} dias, segue "
+            f"{status_label(order.pay.status)} e não tem estimativa de entrega gravada. "
+            "Encaminhe para a equipe verificar."
+        )
     if order.ship.notes.strip():
         lines.append(_note_line(order))
     lines.append("Não recalculo o total gravado.")
@@ -225,6 +232,13 @@ def _tracking(order: OrderRecord) -> str:
 def is_late(order: OrderRecord, today: date) -> bool:
     estimate = order.ship.estimate
     return estimate is not None and order.pay.status in OPEN_DELIVERY_STATUSES and today > estimate
+
+
+def is_stale(order: OrderRecord, today: date) -> bool:
+    """Open, with no stored estimate, and older than the longest estimate the store gives."""
+    age = (today - order.ship.ordered_on).days
+    open_order = order.pay.status in OPEN_DELIVERY_STATUSES
+    return order.ship.estimate is None and open_order and age > UNESTIMATED_ORDER_DAYS
 
 
 def _note_line(order: OrderRecord) -> str:
