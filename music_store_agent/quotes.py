@@ -42,8 +42,9 @@ def quote_text(
         return error
     unit = effective_price(product)
     merchandise = line_total(unit, quantity)
-    ledger.add_product(product.product_id, product.list_price, product.name)
-    ledger.add_product(product.product_id, merchandise, product.name)
+    # The unit price is printed too: the promo price of one unit, or the list price.
+    for amount in (product.list_price, unit, merchandise):
+        ledger.add_product(product.product_id, amount, product.name)
     lines = [_headline(product, quantity, merchandise)]
     lines.append(_payment_line(product, merchandise, payment, ledger))
     lines.append(_installment_line(product, merchandise, payment, installments, ledger))
