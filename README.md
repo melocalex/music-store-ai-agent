@@ -73,7 +73,7 @@ Five scripted conversations are defined in [`examples/generate.py`](examples/gen
 
 ## ✨ Highlights
 
-- **Prices are checked, not trusted.** Every amount in a reply, in any form (`R$ 1.749,00`, `1,749.00`, `99,98`, or "mil e duzentos reais"), must match a value a tool returned for the product named in that sentence. Percents too. Otherwise the model retries, then the customer gets a short message with no amount.
+- **Prices are checked, not trusted.** Every amount in a reply, written as `R$ 1.749,00`, `1,749.00`, `99,98`, `12x de 50`, `2,2 mil`, or "mil e duzentos reais", must match a value a tool returned for the product named in that sentence. Percents too. Otherwise the model retries, then the customer gets a short message with no amount.
 - **The data is audited.** A generated report lists each conflict in the CSVs, the decision taken, and the scenario that covers it.
 - **The clock is pinned** to the day after the last order, Monday 23 March 2026, so exchange windows and late orders read the way the data was recorded.
 - **Identity is order-scoped.** An order opens with its own full email or phone, never with a guess, and three failures close the session.

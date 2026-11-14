@@ -77,12 +77,19 @@ _NUMBER_WORDS = set(_UNITS) | set(_TENS) | set(_HUNDREDS) | set(_SCALES) | {"e"}
 # two digits is the decimal point. A separator before three digits groups thousands.
 _NUMBER = r"\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
 _CURRENCY = r"R\$|BRL|US\$|\$"
+_UNIT_WORDS = r"reais|real|BRL|contos?"
+# "R$ 2,2 mil" and "2,2 mil" are thousands, "12x de 50" is a parcel, "600 conto" is slang for
+# reais. Each form is one alternative, so a number is read once, with its scale.
 _MONEY = re.compile(
-    rf"(?:{_CURRENCY})\s*(?P<pre>{_NUMBER})(?![\d.,]*\d)"
-    rf"|(?<![\d.,])(?P<suf>{_NUMBER})\s*(?:reais|real|BRL)\b"
+    rf"(?:{_CURRENCY})\s*(?P<pre>{_NUMBER})(?![\d.,]*\d)(?:\s*(?P<pre_mil>mil)\b)?"
+    rf"|(?<![\d.,])(?P<kilo>\d+(?:[.,]\d{{1,2}})?)\s*mil\b(?:\s*(?:{_UNIT_WORDS})\b)?"
+    rf"|(?<![\w.,])\d{{1,2}}\s*x\s+de\s+(?P<parcel>{_NUMBER})(?![\d.,]*\d)(?!\s*%)"
+    rf"|(?<![\d.,])(?P<suf>{_NUMBER})\s*(?:{_UNIT_WORDS})\b"
     rf"|(?<![\d.,])(?P<bare>\d{{1,3}}(?:[.,]\d{{3}})+[.,]\d{{2}}|\d+[.,]\d{{2}})(?![\d.,]*\d)",
     re.IGNORECASE,
 )
+_AMOUNT_GROUPS = ("pre", "kilo", "parcel", "suf", "bare")
+_THOUSAND = Decimal(1000)
 _AMOUNT_TEXT = re.compile(rf"(?:{_CURRENCY})?\s*({_NUMBER})\s*(?:reais|real|BRL)?", re.IGNORECASE)
 _PERCENT = re.compile(
     r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:%|por\s*cento\b|percent\b)", re.IGNORECASE
@@ -174,8 +181,11 @@ def _split_decimal(token: str) -> tuple[str, str, str]:
 def amounts_in_text(text: str) -> set[Decimal]:
     found: set[Decimal] = set()
     for match in _MONEY.finditer(text):
-        token = match.group("pre") or match.group("suf") or match.group("bare")
-        found.add(_number_value(token))
+        token = next(match.group(name) for name in _AMOUNT_GROUPS if match.group(name))
+        value = _number_value(token)
+        if match.group("pre_mil") or match.group("kilo"):
+            value = (value * _THOUSAND).quantize(CENT)
+        found.add(value)
     found.update(_word_amounts(text))
     return found
 
@@ -188,7 +198,7 @@ def _word_amounts(text: str) -> set[Decimal]:
     tokens = re.findall(r"[a-z]+|\d+", fold(text))
     found: set[Decimal] = set()
     for index, token in enumerate(tokens):
-        if token not in {"real", "reais"}:
+        if token not in {"real", "reais", "conto", "contos"}:
             continue
         whole = _whole_before(tokens, index)
         if whole is None:
@@ -206,6 +216,9 @@ def _whole_before(tokens: list[str], index: int) -> int | None:
     words = _walk_back(tokens, index)
     if not words:
         return None
+    before = index - 1 - len(words)
+    if before >= 0 and tokens[before].isdigit():
+        return None  # "2 mil reais" is read by _MONEY as 2000, not here as 1000
     return parse_pt_number(words)
 
 

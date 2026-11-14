@@ -47,6 +47,16 @@ def test_bare_and_foreign_amount_forms_are_checked() -> None:
     assert grounding_gap("O pedido 4 chega em 2026-03-30, em 3 dias.", [], ledger).ok
 
 
+def test_slang_parcels_and_thousands_are_checked_like_any_amount() -> None:
+    ledger = _ledger()
+    for text in ("Dá sim: 12x de 50 no cartão.", "Sai por uns 2,2 mil.", "Fica em 600 conto."):
+        assert not grounding_gap(text, [], ledger).ok, text
+    ledger.add_product(81, Decimal("50.00"), "Yamaha C40 Nylon Natural")
+    grounded = [PriceQuote(product_id=81, amount=Decimal("50.00"))]
+    assert grounding_gap("O C40 em 12x de 50 no cartão.", grounded, ledger).ok
+    assert grounding_gap("O C40 sai em 12x sem juros.", [], ledger).ok
+
+
 def test_amount_must_sit_next_to_its_own_product() -> None:
     ledger = _ledger()
     other = [PriceQuote(product_id=82, amount=C70)]

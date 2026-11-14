@@ -104,6 +104,18 @@ def test_brand_conflict_is_a_rule() -> None:
     assert "takamine" in brands_in("Takamine GD20")
 
 
+def test_parcels_thousands_and_slang_are_amounts() -> None:
+    assert amounts_in_text("Dá sim: 12x de 50 no cartão") == {Decimal("50.00")}
+    assert amounts_in_text("10x de 59,99") == {Decimal("59.99")}
+    assert amounts_in_text("Sai por 2,2 mil") == {Decimal("2200.00")}
+    assert amounts_in_text("R$ 2,2 mil") == {Decimal("2200.00")}
+    assert amounts_in_text("2 mil reais") == {Decimal("2000.00")}
+    assert amounts_in_text("600 conto") == {Decimal("600.00")}
+    assert amounts_in_text("seiscentos contos") == {Decimal("600.00")}
+    assert amounts_in_text("em 12x sem juros, 3x no boleto") == set()
+    assert amounts_in_text("12x de 5% ao mês") == set()
+
+
 def test_mask_pii_hides_contacts_and_keeps_other_numbers() -> None:
     masked = mask_pii("Lucas, lucas.mendes@jmail.com, (67) 99812-3456, +55 67 99812-3456")
     assert "@" not in masked
