@@ -62,8 +62,20 @@ _HUNDREDS = {
 }
 _SCALES = {"mil": 1000, "milhao": 1_000_000, "milhoes": 1_000_000}
 _NUMBER_WORDS = set(_UNITS) | set(_TENS) | set(_HUNDREDS) | set(_SCALES) | {"e"}
-_BRL = re.compile(r"R\$\s*(\d[\d.]*(?:,\d{2})?|\d+\.\d{2})")
-_DIGIT_REAIS = re.compile(r"\b(\d{1,3}(?:\.\d{3})+|\d+)\s+reais?\b")
+# One shape for pt-BR (1.749,50) and English (1,749.50) money. A final separator with one or
+# two digits is the decimal point. A separator before three digits groups thousands.
+_NUMBER = r"\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
+_CURRENCY = r"R\$|BRL|US\$|\$"
+_MONEY = re.compile(
+    rf"(?:{_CURRENCY})\s*(?P<pre>{_NUMBER})(?![\d.,]*\d)"
+    rf"|(?<![\d.,])(?P<suf>{_NUMBER})\s*(?:reais|real|BRL)\b"
+    rf"|(?<![\d.,])(?P<bare>\d{{1,3}}(?:[.,]\d{{3}})+[.,]\d{{2}}|\d+[.,]\d{{2}})(?![\d.,]*\d)",
+    re.IGNORECASE,
+)
+_AMOUNT_TEXT = re.compile(rf"(?:{_CURRENCY})?\s*({_NUMBER})\s*(?:reais|real|BRL)?", re.IGNORECASE)
+_PERCENT = re.compile(
+    r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:%|por\s*cento\b|percent\b)", re.IGNORECASE
+)
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _PHONE_CANDIDATE = re.compile(r"\+?\d[\d\s().-]{8,}\d")
 
@@ -112,35 +124,49 @@ def format_amount(amount: Decimal) -> str:
 
 
 def parse_amount(value: object) -> Decimal:
+    """Read 1000, 1.000, 1.000,00, 1,000.00, R$ 1000, or 1000 reais. Raise ValueError otherwise."""
     if isinstance(value, Decimal):
         return value.quantize(CENT)
-    text = str(value).strip().replace(" ", "")
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
-    return Decimal(text).quantize(CENT)
+    if isinstance(value, int | float):
+        return Decimal(str(value)).quantize(CENT)
+    match = _AMOUNT_TEXT.fullmatch(str(value).strip())
+    if match is None:
+        raise ValueError(f"not an amount: {value!r}")
+    return _number_value(match.group(1))
 
 
 def parse_money_token(token: str) -> Decimal | None:
     try:
         return parse_amount(token)
-    except Exception:
+    except ValueError:
         return None
+
+
+def _number_value(token: str) -> Decimal:
+    head, separator, tail = _split_decimal(token)
+    whole = re.sub(r"[.,]", "", head)
+    text = f"{whole}.{tail}" if separator else whole
+    return Decimal(text).quantize(CENT)
+
+
+def _split_decimal(token: str) -> tuple[str, str, str]:
+    cut = max(token.rfind(","), token.rfind("."))
+    if cut < 0 or len(token) - cut - 1 == len("000"):
+        return token, "", ""
+    return token[:cut], token[cut], token[cut + 1 :]
 
 
 def amounts_in_text(text: str) -> set[Decimal]:
     found: set[Decimal] = set()
-    for match in _BRL.finditer(text):
-        parsed = parse_money_token(match.group(1))
-        if parsed is not None:
-            found.add(parsed)
-    for match in _DIGIT_REAIS.finditer(fold(text)):
-        parsed = parse_money_token(match.group(1))
-        if parsed is not None:
-            found.add(parsed)
+    for match in _MONEY.finditer(text):
+        token = match.group("pre") or match.group("suf") or match.group("bare")
+        found.add(_number_value(token))
     found.update(_word_amounts(text))
     return found
+
+
+def percents_in_text(text: str) -> set[Decimal]:
+    return {_number_value(match.group(1)) for match in _PERCENT.finditer(text)}
 
 
 def _word_amounts(text: str) -> set[Decimal]:
@@ -161,7 +187,7 @@ def _word_amounts(text: str) -> set[Decimal]:
 
 def _whole_before(tokens: list[str], index: int) -> int | None:
     if index > 0 and tokens[index - 1].isdigit():
-        return int(tokens[index - 1])
+        return None  # digits before "reais" are read by _MONEY, with their decimals
     words = _walk_back(tokens, index)
     if not words:
         return None
