@@ -1,0 +1,103 @@
+"""One scripted model turn exercises the tools and the price check."""
+
+import asyncio
+from datetime import date
+
+from music_store_agent.agent import build_agent
+from music_store_agent.constants import (
+    DAILY_CAP_MESSAGE,
+    SAFE_PRICE_MESSAGE,
+    SESSION_CAP_MESSAGE,
+    SESSION_TURN_CAP,
+)
+from music_store_agent.db import load_database
+from music_store_agent.deps import make_deps
+from music_store_agent.run import run_turn
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.test import TestModel
+
+PINNED = date(2026, 3, 23)
+
+
+def _final(message: str, quotes: list[dict[str, object]]) -> ModelResponse:
+    return ModelResponse(
+        parts=[ToolCallPart(tool_name="final_result", args={"message": message, "quotes": quotes})]
+    )
+
+
+def _c40(messages, _info):
+    last = messages[-1]
+    returns = [
+        part
+        for part in getattr(last, "parts", [])
+        if getattr(part, "part_kind", "") == "tool-return"
+    ]
+    if returns:
+        return _final(
+            "O Yamaha C40 custa R$ 599,90. Posso ajudar em mais alguma coisa?",
+            [{"product_id": 81, "amount": "599.90"}],
+        )
+    return ModelResponse(parts=[ToolCallPart(tool_name="get_product", args={"query": "C40"})])
+
+
+def _ungrounded(_messages, _info):
+    return _final("Posso fazer por R$ 10,00.", [])
+
+
+def test_function_model_grounds_the_c40_price(tmp_path) -> None:
+    deps = make_deps(
+        load_database(),
+        today=PINNED,
+        handoff_path=tmp_path / "handoffs.jsonl",
+        usage_path=tmp_path / "turns.json",
+    )
+    result = asyncio.run(build_agent(FunctionModel(_c40)).run("Qual o preço do C40?", deps=deps))
+    assert "599,90" in result.output.message
+    assert result.output.quotes[0].product_id == 81
+
+
+def test_ungrounded_price_falls_back_without_the_amount(tmp_path) -> None:
+    deps = make_deps(
+        load_database(),
+        today=PINNED,
+        handoff_path=tmp_path / "handoffs.jsonl",
+        usage_path=tmp_path / "turns.json",
+    )
+    agent = build_agent(FunctionModel(_ungrounded))
+    turn = asyncio.run(run_turn(agent, deps, "desconto", [], 0))
+    assert turn.message == SAFE_PRICE_MESSAGE
+    assert "10,00" not in turn.message
+    assert deps.counters.validator_catches >= 1
+    assert "price_check" in (tmp_path / "handoffs.jsonl").read_text(encoding="utf-8")
+
+
+def test_session_cap_does_not_call_the_model(tmp_path) -> None:
+    deps = _deps(tmp_path)
+
+    def explode(_messages, _info):
+        raise AssertionError("the model should not run")
+
+    agent = build_agent(FunctionModel(explode))
+    turn = asyncio.run(run_turn(agent, deps, "oi", [], SESSION_TURN_CAP))
+    assert turn.message == SESSION_CAP_MESSAGE
+    assert turn.limited
+
+
+def test_daily_cap_uses_the_real_local_day(tmp_path) -> None:
+    deps = _deps(tmp_path)
+    stub = TestModel(call_tools=[], custom_output_args={"message": "Olá.", "quotes": []})
+    agent = build_agent(stub)
+    first = asyncio.run(run_turn(agent, deps, "oi", [], 0, daily_limit=1))
+    second = asyncio.run(run_turn(agent, deps, "de novo", [], 1, daily_limit=1))
+    assert first.message == "Olá."
+    assert second.message == DAILY_CAP_MESSAGE
+
+
+def _deps(tmp_path):
+    return make_deps(
+        load_database(),
+        today=PINNED,
+        handoff_path=tmp_path / "handoffs.jsonl",
+        usage_path=tmp_path / "turns.json",
+    )
