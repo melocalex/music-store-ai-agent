@@ -4,13 +4,14 @@ import asyncio
 import os
 
 import streamlit as st
+from pydantic_ai.messages import ModelMessage
+
 from music_store_agent.agent import build_agent
 from music_store_agent.constants import ASSISTANT_NAME, SAMPLE_QUESTIONS, STORE_NAME
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
 from music_store_agent.run import run_turn
 from music_store_agent.textutil import mask_pii
-from pydantic_ai.messages import ModelMessage
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 

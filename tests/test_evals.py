@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import evals.run as run_module
 import yaml
+
+import evals.run as run_module
 from evals.run import main
 from evals.score import score_case
 from music_store_agent.quality import render
