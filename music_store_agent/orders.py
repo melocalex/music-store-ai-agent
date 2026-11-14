@@ -238,7 +238,11 @@ def explain_after_sales(
     if isinstance(order, str):
         return AfterSales(order, False)
     if order.pay.status == ORDER_CANCELLED:
-        return AfterSales(f"O pedido {order.order_id} está cancelado. Não abro troca.", False)
+        text = (
+            f"O pedido {order.order_id} está cancelado. As regras de troca tratam de produto "
+            "recebido, então a equipe confirma o caso."
+        )
+        return AfterSales(text, True)
     ordered_on = order.ship.ordered_on
     delivered = order.pay.status not in OPEN_DELIVERY_STATUSES
     lines = [
@@ -248,7 +252,7 @@ def explain_after_sales(
         receipt_line(
             "Arrependimento, só em compra online", REGRET_DAYS, ordered_on, today, delivered
         ),
-        receipt_line("Troca por preferência", PREFERENCE_DAYS, ordered_on, today, delivered),
+        preference_line(ordered_on, today),
         "Não aprovo a solicitação. A equipe confirma.",
     ]
     return AfterSales("\n".join(lines), True)
@@ -275,3 +279,15 @@ def receipt_line(label: str, days: int, ordered_on: date, today: date, delivered
         f"{head} A compra foi há {elapsed} dias e o pedido não guarda a data de recebimento. "
         "Peça essa data."
     )
+
+
+def preference_line(ordered_on: date, today: date) -> str:
+    """The manual gives 7 days without saying from when. Inside 7 days of purchase, both agree."""
+    elapsed = (today - ordered_on).days
+    head = (
+        f"Troca por preferência: {PREFERENCE_DAYS} dias, se houver o produto desejado. "
+        "O manual não diz se contam da compra ou do recebimento."
+    )
+    if elapsed <= PREFERENCE_DAYS:
+        return f"{head} A compra foi há {elapsed} dias, então o prazo vale nas duas leituras."
+    return f"{head} A compra foi há {elapsed} dias. Peça a data de recebimento."

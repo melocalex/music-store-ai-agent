@@ -12,6 +12,7 @@ from music_store_agent.constants import (
     MAX_VERIFICATION_ATTEMPTS,
     NOT_VERIFIED,
     NOT_YOUR_ORDER,
+    PREFERENCE_DAYS,
     REGRET_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
@@ -24,6 +25,7 @@ from music_store_agent.orders import (
     explain_after_sales,
     is_late,
     load_order,
+    preference_line,
     read_order,
     receipt_line,
     verify,
@@ -159,3 +161,12 @@ def test_late_starts_the_day_after_the_estimate() -> None:
     assert is_late(order, estimate + timedelta(days=1))
     delivered = replace(order, pay=replace(order.pay, status="delivered"))
     assert not is_late(delivered, estimate + timedelta(days=1))
+
+
+def test_preference_window_states_that_its_start_is_unclear() -> None:
+    bought = date(2026, 1, 1)
+    inside = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS))
+    after = preference_line(bought, bought + timedelta(days=PREFERENCE_DAYS + 1))
+    assert "nas duas leituras" in inside
+    assert "Peça a data de recebimento" in after
+    assert "não diz se contam da compra ou do recebimento" in inside
