@@ -1,6 +1,7 @@
 """Order identity is full contact, the attempt limit holds, and history is not recomputed."""
 
 import re
+import shutil
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -12,13 +13,14 @@ from music_store_agent.constants import (
     MAX_VERIFICATION_ATTEMPTS,
     NOT_VERIFIED,
     NOT_YOUR_ORDER,
+    ORDER_ITEMS_LIMIT,
     PREFERENCE_DAYS,
     REGRET_DAYS,
     UNESTIMATED_ORDER_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
 )
-from music_store_agent.db import load_database
+from music_store_agent.db import data_dir, fetch_order_items, load_database
 from music_store_agent.ledger import Ledger
 from music_store_agent.orders import (
     Identity,
@@ -231,3 +233,16 @@ def test_preference_window_states_that_its_start_is_unclear() -> None:
     assert "nas duas leituras" in inside
     assert "Peça a data de recebimento" in after
     assert "não diz se contam da compra ou do recebimento" in inside
+
+
+def test_an_order_lists_at_most_the_item_cap(tmp_path) -> None:
+    source = data_dir()
+    for csv_file in source.glob("*.csv"):
+        shutil.copy(csv_file, tmp_path / csv_file.name)
+    extra = "".join(f"1,1,{81 + index % 30}\r\n" for index in range(ORDER_ITEMS_LIMIT + 5))
+    with (tmp_path / "order_items.csv").open("a", encoding="utf-8", newline="") as handle:
+        handle.write(extra)
+    padded = load_database(tmp_path)
+    assert len(fetch_order_items(padded, 1)) == ORDER_ITEMS_LIMIT
+    assert len(load_order(padded, 1).items) == ORDER_ITEMS_LIMIT
+    assert len(fetch_order_items(load_database(), 1)) < ORDER_ITEMS_LIMIT

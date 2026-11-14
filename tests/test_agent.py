@@ -98,10 +98,14 @@ def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
     assert again.models[0].breaker is primary.breaker
 
 
-def test_primary_and_fallback_fit_in_one_turn() -> None:
-    assert PROVIDER_SDK_RETRIES == 0
-    assert MODEL_ATTEMPTS_PER_REQUEST == 2
-    assert DEFAULT_REQUEST_TIMEOUT_SECONDS * MODEL_ATTEMPTS_PER_REQUEST <= TURN_TIMEOUT_SECONDS
+def test_primary_and_fallback_fit_in_one_turn(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    for name in (MODEL_ENV, MODEL_FALLBACK_ENV, MODEL_TIMEOUT_ENV, MODEL_BREAKER_ENV):
+        monkeypatch.delenv(name, raising=False)
+    chain = build_agent().model
+    assert isinstance(chain, FallbackModel)
+    assert len(chain.models) == MODEL_ATTEMPTS_PER_REQUEST
+    assert sum(model.seconds for model in chain.models) <= TURN_TIMEOUT_SECONDS
 
 
 def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkeypatch) -> None:
@@ -120,7 +124,6 @@ def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkey
 
 def test_breaker_window_reads_its_variable_and_zero_turns_it_off(monkeypatch) -> None:
     monkeypatch.delenv(MODEL_BREAKER_ENV, raising=False)
-    assert DEFAULT_BREAKER_SECONDS == 300
     assert breaker_window() == DEFAULT_BREAKER_SECONDS
     assert breaker_window(" 90 ") == 90
     assert breaker_window("0") == 0

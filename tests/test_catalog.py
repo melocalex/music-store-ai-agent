@@ -19,6 +19,7 @@ from music_store_agent.catalog import (
 from music_store_agent.constants import (
     BLACK_FRIDAY,
     CENT,
+    OFFSET_MAX,
     SEARCH_ROW_CAP,
     SORT_PRICE_ASC,
     STATE_AVAILABLE,
@@ -34,6 +35,14 @@ from music_store_agent.textutil import description_conflicts, format_brl
 
 def _products():
     return load_catalog(load_database())
+
+
+def _violoes_up_to(products, ceiling: Decimal) -> int:
+    return sum(
+        1
+        for p in products
+        if p.category == "Violões" and is_sellable(p) and effective_price(p) <= ceiling
+    )
 
 
 def _by_id(products, product_id):
@@ -66,9 +75,10 @@ def test_budget_search_hides_unsellable_and_caps_rows() -> None:
         CatalogQuery(text="violao", max_price=Decimal("1000")),
         Ledger(),
     )
-    assert "Mostrando 1–5 de 12." in text
-    assert "96" not in text
-    assert "113" not in text
+    under = _violoes_up_to(products, Decimal("1000"))
+    assert f"Mostrando 1–{min(SEARCH_ROW_CAP, under)} de {under}." in text
+    assert "| id 96 |" not in text
+    assert "| id 113 |" not in text
 
 
 def test_codes_takamine_and_ukulele_concert() -> None:
@@ -100,7 +110,8 @@ def test_category_spelling_is_normalised() -> None:
     products = _products()
     for spelling in ("violões", "Violão", "violao", "Violões"):
         request = CatalogQuery(category=spelling, max_price=Decimal("1000"))
-        assert "de 12." in search_catalog(products, request, Ledger()), spelling
+        under = _violoes_up_to(products, Decimal("1000"))
+        assert f"de {under}." in search_catalog(products, request, Ledger()), spelling
     unknown = search_catalog(products, CatalogQuery(category="xilofone"), Ledger())
     assert "Não conheço a categoria" in unknown
 
@@ -109,7 +120,7 @@ def test_words_outside_the_catalog_are_ignored_and_specs_count() -> None:
     products = _products()
     question = "Quais opções de violões disponíveis custando até R$1000?"
     text = search_catalog(products, CatalogQuery(question, max_price=Decimal("1000")), Ledger())
-    assert "de 12." in text
+    assert f"de {_violoes_up_to(products, Decimal('1000'))}." in text
     electric = find_products(products, "violão eletroacústico")
     assert electric
     assert all(("electronics", "yes") in product.details.specs for product in electric)
@@ -229,6 +240,16 @@ def test_more_matches_than_rows_say_how_many_and_discontinued_hides_stock() -> N
     assert "Estoque" not in describe_one(products, bass, Ledger())
     sold_out = next(p for p in products if product_state(p) == STATE_OUT_OF_STOCK)
     assert "Estoque gravado: 0." in describe_one(products, sold_out, Ledger())
+
+
+def test_the_offset_stops_at_its_cap() -> None:
+    c40 = _by_id(_products(), 81)
+    many = tuple(replace(c40, product_id=1000 + index) for index in range(OFFSET_MAX + 10))
+    beyond = CatalogQuery("C40", offset=OFFSET_MAX + 5)
+    text = search_catalog(many, beyond, Ledger())
+    assert text.startswith(f"Mostrando {OFFSET_MAX + 1}–{OFFSET_MAX + SEARCH_ROW_CAP} de")
+    at_cap = search_catalog(many, CatalogQuery("C40", offset=OFFSET_MAX), Ledger())
+    assert at_cap.splitlines()[0] == text.splitlines()[0]
 
 
 def test_specs_are_shown() -> None:

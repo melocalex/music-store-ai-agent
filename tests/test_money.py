@@ -1,6 +1,6 @@
 """Boundary checks for the payment and freight calculator."""
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from music_store_agent.constants import (
     CASH_INSTALLMENTS,
@@ -22,7 +22,6 @@ from music_store_agent.money import (
     decide_freight,
     decide_installments,
     max_installments,
-    percent_off,
     pix_price,
     quantity_error,
     quantize,
@@ -37,7 +36,9 @@ STOCK = 5
 
 
 def test_pix_rounds_half_up() -> None:
-    assert pix_price(C40) == percent_off(C40, PIX_PERCENT)
+    by_hand = C40 * (Decimal(100) - PIX_PERCENT) / Decimal(100)
+    assert by_hand == Decimal("569.905")
+    assert pix_price(C40) == by_hand.quantize(CENT, rounding=ROUND_HALF_UP)
     assert pix_price(C40) == Decimal("569.91")  # 569.905 rounds up
     assert pix_price(LIST_2199) == Decimal("2089.05")
 
@@ -46,7 +47,7 @@ def test_parcels_add_up_to_the_price() -> None:
     parcels = split_parcels(C40, TIER_MID_MAX)
     assert parcels.total == C40
     assert parcels.rest == Decimal("99.98")
-    assert parcels.first == C40 - parcels.rest * (TIER_MID_MAX - 1)
+    assert parcels.first == Decimal("100.00")
     even = split_parcels(MIN_PARCEL_4_TO_6 * TIER_MID_MAX, TIER_MID_MAX)
     assert even.first == even.rest == MIN_PARCEL_4_TO_6
 
