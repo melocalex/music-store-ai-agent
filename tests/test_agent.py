@@ -15,6 +15,7 @@ from pydantic_ai.models.test import TestModel
 
 from music_store_agent.agent import (
     _money,
+    breaker_window,
     build_agent,
     fallback_model_id,
     model_id,
@@ -22,10 +23,12 @@ from music_store_agent.agent import (
 )
 from music_store_agent.constants import (
     DAILY_CAP_MESSAGE,
+    DEFAULT_BREAKER_SECONDS,
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     MODEL_ATTEMPTS_PER_REQUEST,
+    MODEL_BREAKER_ENV,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
@@ -38,7 +41,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
-from music_store_agent.failover import DeadlineModel
+from music_store_agent.failover import GuardedModel
 from music_store_agent.run import run_turn
 
 PINNED = date(2026, 3, 23)
@@ -65,18 +68,26 @@ def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
     monkeypatch.delenv(MODEL_ENV, raising=False)
     monkeypatch.delenv(MODEL_FALLBACK_ENV, raising=False)
     monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
+    monkeypatch.delenv(MODEL_BREAKER_ENV, raising=False)
     agent = build_agent()
     chain = agent.model
     assert isinstance(chain, FallbackModel)
     assert [model.model_id for model in chain.models] == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL]
     for model in chain.models:
-        assert isinstance(model, DeadlineModel)
+        assert isinstance(model, GuardedModel)
         assert isinstance(model.wrapped, GoogleModel)
         assert model.seconds == DEFAULT_REQUEST_TIMEOUT_SECONDS
     assert agent.model_settings == {
         "timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
         "max_retries": PROVIDER_SDK_RETRIES,
     }
+    primary, fallback = chain.models
+    assert fallback.breaker is None
+    assert primary.breaker is not None
+    assert primary.breaker.window == DEFAULT_BREAKER_SECONDS
+    again = build_agent().model
+    assert isinstance(again, FallbackModel)
+    assert again.models[0].breaker is primary.breaker
 
 
 def test_primary_and_fallback_fit_in_one_turn() -> None:
@@ -96,6 +107,21 @@ def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkey
             request_timeout(wrong)
     monkeypatch.setenv(MODEL_TIMEOUT_ENV, "60")
     with pytest.raises(ValueError, match=MODEL_TIMEOUT_ENV):
+        build_agent()
+
+
+def test_breaker_window_reads_its_variable_and_zero_turns_it_off(monkeypatch) -> None:
+    monkeypatch.delenv(MODEL_BREAKER_ENV, raising=False)
+    assert DEFAULT_BREAKER_SECONDS == 300
+    assert breaker_window() == DEFAULT_BREAKER_SECONDS
+    assert breaker_window(" 90 ") == 90
+    assert breaker_window("0") == 0
+    for wrong in ("-1", "abc", "nan", "inf"):
+        with pytest.raises(ValueError, match=MODEL_BREAKER_ENV):
+            breaker_window(wrong)
+    monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
+    monkeypatch.setenv(MODEL_BREAKER_ENV, "-5")
+    with pytest.raises(ValueError, match=MODEL_BREAKER_ENV):
         build_agent()
 
 
