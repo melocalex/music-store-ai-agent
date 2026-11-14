@@ -156,7 +156,7 @@ music-store-ai-agent/
 | A product is named only by brand, as in "o Takamine" | The sentence check cannot tie the amount to a model, so it relies on the quote's product id |
 | A clause sits between a model and its price, as in "o C40, ao lado do C70, sai por R$ 599,90" | The price is tied to the nearest model before the verb, the C70, so the honest reply is refused and the model rewrites it |
 | A percent written in words, as in "cinco por cento" | The percent check reads digits only |
-| Carnival, Good Friday, or Corpus Christi | Moving holidays are not in the list. Aria says so and hands off |
+| Carnival or Corpus Christi | The dates are computed from Easter and flagged, but the store has no set hours for them, so Aria does not confirm hours and hands off. Good Friday is closed |
 | Freight to another city | Not calculated. The team quotes it |
 | Gemini 3.8 Flash is down or takes more than 20 seconds | The request moves to Gemini 3.6 Flash, and later requests skip 3.8 for five minutes. If both fail, or the turn passes 45 seconds, a short message asks to try again |
 | The provider quota runs out | A short message names the limit. The daily cap is 80 turns |
@@ -167,7 +167,7 @@ music-store-ai-agent/
 - Commit the first live eval report and the five transcripts.
 - Read the receipt date from the carrier, so the 7- and 90-day windows no longer need the customer.
 - Quote freight for other cities through a carrier API.
-- Load moving holidays from a calendar source.
+- Set the store's hours for Carnival and Corpus Christi.
 - Expose the tools over MCP once the session identity is redesigned.
 - Add write actions behind an order service, each with its own confirmation step.
 

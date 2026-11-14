@@ -45,6 +45,8 @@ Nota do atendimento: o fechamento é inclusivo. 18:00 ainda é horário de loja 
 
 Carnaval, Sexta-feira Santa e Corpus Christi mudam de data e não estão nesta lista.
 
+Nota do atendimento: a Sexta-feira Santa é feriado nacional e a loja fecha. Carnaval e Corpus Christi não têm horário definido: confirme com a equipe.
+
 # pagamento
 
 | Forma | Condição | Observação |

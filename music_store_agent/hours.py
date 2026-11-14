@@ -9,10 +9,18 @@ from music_store_agent.clock import (
     day_closed_reason,
     holiday_lines,
     hours_for,
+    moving_dates,
     next_opening_label,
+    unset_hours_holiday,
     weekday_name,
 )
-from music_store_agent.constants import LANDLINE_PHONE, WHATSAPP_PHONE
+from music_store_agent.constants import (
+    CARNIVAL,
+    CORPUS_CHRISTI,
+    GOOD_FRIDAY,
+    LANDLINE_PHONE,
+    WHATSAPP_PHONE,
+)
 
 _DAY_MONTH = re.compile(r"(\d{1,2})[/-](\d{1,2})")
 
@@ -24,11 +32,7 @@ def hours_answer(now: datetime, asked: date | None = None) -> str:
     day = asked or today
     lines = [f"Data consultada: {weekday_name(day)}, {day.isoformat()}."]
     whole_day = day_closed_reason(day)
-    if whole_day is None:
-        start, end = hours_for(day)
-        lines.append(f"Horário nesse dia: {start.strftime('%H:%M')} às {end.strftime('%H:%M')}.")
-    else:
-        lines.append(f"A loja fica fechada nesse dia ({whole_day}).")
+    lines.append(_day_line(day, whole_day))
     if day == today:
         lines.append(_right_now(local))
     elif day < today:
@@ -37,8 +41,31 @@ def hours_answer(now: datetime, asked: date | None = None) -> str:
         lines.append(f"Próxima abertura depois disso: {next_opening_label(day, local.time())}.")
     lines.append(f"WhatsApp {WHATSAPP_PHONE}. Telefone fixo {LANDLINE_PHONE}.")
     lines.append("Feriados fixos: " + holiday_lines() + ".")
-    lines.append("Carnaval, Sexta-feira Santa e Corpus Christi não estão na lista.")
+    lines.append(_moving_line(day.year))
     return "\n".join(lines)
+
+
+def _day_line(day: date, whole_day: str | None) -> str:
+    if whole_day is not None:
+        return f"A loja fica fechada nesse dia ({whole_day})."
+    start, end = (moment.strftime("%H:%M") for moment in hours_for(day))
+    unset = unset_hours_holiday(day)
+    if unset is None:
+        return f"Horário nesse dia: {start} às {end}."
+    return (
+        f"Essa data é {unset}. O horário da loja nesse dia não está definido (o normal seria "
+        f"{start} às {end}): não confirme, encaminhe para a equipe."
+    )
+
+
+def _moving_line(year: int) -> str:
+    dates = moving_dates(year)
+    shown = {name: " e ".join(d.strftime("%d/%m") for d in days) for name, days in dates.items()}
+    return (
+        f"Feriados móveis de {year}: {GOOD_FRIDAY} ({shown[GOOD_FRIDAY]}), loja fechada; "
+        f"{CARNIVAL} ({shown[CARNIVAL]}) e {CORPUS_CHRISTI} ({shown[CORPUS_CHRISTI]}), "
+        "horário a confirmar com a equipe."
+    )
 
 
 def _right_now(local: datetime) -> str:

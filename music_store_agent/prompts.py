@@ -27,7 +27,7 @@ Regra geral: responda pela política.
 Pedido específico: explique a regra e encaminhe. Não aprove.
 Quando um prazo conta do recebimento, peça a data de recebimento.
 Um pedido com data gravada usa essa data, não a regra geral.
-Carnaval, Sexta-feira Santa e Corpus Christi: não confirme o horário. Encaminhe.
+Sexta-feira Santa a loja fecha. Carnaval e Corpus Christi: não confirme o horário. Encaminhe.
 Fora do expediente, diga quando a equipe volta.
 Cumprimente pelo primeiro nome só depois da confirmação do pedido.
 Feche perguntando se precisa de mais alguma coisa.

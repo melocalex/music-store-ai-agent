@@ -5,16 +5,21 @@ from datetime import date, datetime, time, timedelta
 from music_store_agent.clock import (
     clock_at,
     closed_reason,
+    easter,
     holiday_name,
+    moving_dates,
     next_opening_label,
     pinned_day,
     weekday_name,
 )
 from music_store_agent.constants import (
+    CARNIVAL,
     CLOCK_FIXED,
     CLOCK_PINNED,
     CLOCK_REAL,
+    CORPUS_CHRISTI,
     FIXED_HOLIDAYS,
+    GOOD_FRIDAY,
     PINNED_DAY_OFFSET,
     REFERENCE_TIME,
     SATURDAY_CLOSE,
@@ -77,6 +82,35 @@ def test_every_fixed_holiday_is_closed_and_its_neighbours_are_not() -> None:
     santo = date(2026, 6, 13)
     assert next_opening_label(santo, REFERENCE_TIME).startswith("2026-06-15")
     assert closed_reason(santo - timedelta(days=1), REFERENCE_TIME) is None
+
+
+def test_easter_and_the_moving_holidays_follow_it() -> None:
+    known = {2024: (3, 31), 2025: (4, 20), 2026: (4, 5), 2027: (3, 28), 2038: (4, 25)}
+    for year, (month, day) in known.items():
+        assert easter(year) == date(year, month, day)
+    dates = moving_dates(2026)
+    assert dates[GOOD_FRIDAY] == (date(2026, 4, 3),)
+    assert dates[CARNIVAL] == (date(2026, 2, 16), date(2026, 2, 17))
+    assert dates[CORPUS_CHRISTI] == (date(2026, 6, 4),)
+
+
+def test_good_friday_closes_and_carnival_and_corpus_christi_are_flagged() -> None:
+    now = clock_at(MONDAY).now()
+    good_friday = parse_asked_day("03/04", MONDAY)
+    assert good_friday == date(2026, 4, 3)
+    closed = hours_answer(now, good_friday)
+    assert f"A loja fica fechada nesse dia ({GOOD_FRIDAY})." in closed
+    assert "Horário nesse dia" not in closed
+    assert next_opening_label(good_friday - timedelta(days=1), time(19, 0)) == "2026-04-04 09:00"
+    assert holiday_name(date(2027, 3, 26)) == GOOD_FRIDAY
+    for flagged, name in ((date(2026, 6, 4), CORPUS_CHRISTI), (date(2027, 2, 9), CARNIVAL)):
+        text = hours_answer(now, flagged)
+        assert f"Essa data é {name}." in text and "não confirme" in text
+        assert "Horário nesse dia" not in text
+        assert closed_reason(flagged, REFERENCE_TIME) is None
+    plain = hours_answer(now, date(2026, 6, 5))
+    assert "Horário nesse dia: 09:00 às 18:00." in plain
+    assert "Essa data é" not in plain
 
 
 def test_today_uses_the_current_time() -> None:
