@@ -10,10 +10,11 @@ from music_store_agent.constants import (
     LANDLINE_PHONE,
     PHONE_MIN_DIGITS,
     PHONE_NATIONAL_MAX_DIGITS,
+    STORE_EMAIL,
     WHATSAPP_PHONE,
 )
 
-# The store's own numbers are public contacts, not customer data, so masking keeps them.
+# The store's own contacts are public, not customer data, so masking keeps them.
 _STORE_PHONES = (WHATSAPP_PHONE, LANDLINE_PHONE)
 
 _UNITS = {
@@ -87,7 +88,11 @@ _PERCENT = re.compile(
     r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:%|por\s*cento\b|percent\b)", re.IGNORECASE
 )
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-_PHONE_CANDIDATE = re.compile(r"\+?\d[\d\s().-]{8,}\d")
+# A Brazilian phone: optional +55, a DDD with or without parentheses or a trunk 0, then 8 or 9
+# digits. A date and an hour, such as 2026-03-23 09:00, has no run of four digits after the DDD.
+_PHONE = re.compile(
+    r"(?<![\w+])(?:\+?55[\s.-]*)?\(?0?\d{2}\)?[\s.-]*(?:9[\s.-]?)?\d{4}[\s.-]?\d{4}(?!\w)"
+)
 
 
 def fold(text: str) -> str:
@@ -305,18 +310,18 @@ def parse_pt_number(words: list[str]) -> int | None:
 
 
 def mask_pii(text: str) -> str:
-    """Mask customer emails and phones. The store's WhatsApp and landline stay readable."""
-    masked = _EMAIL.sub("[email]", text)
+    """Mask customer emails and phones. The store's e-mail, WhatsApp, and landline stay."""
+    return _PHONE.sub(_masked_phone, _EMAIL.sub(_masked_email, text))
 
-    def _phone(match: re.Match[str]) -> str:
-        found = match.group(0)
-        if any(phones_match(store, found) for store in _STORE_PHONES):
-            return found
-        if len(digits(found)) >= PHONE_MIN_DIGITS:
-            return "[phone]"
-        return found
 
-    return _PHONE_CANDIDATE.sub(_phone, masked)
+def _masked_email(match: re.Match[str]) -> str:
+    found = match.group(0)
+    return found if emails_match(STORE_EMAIL, found) else "[email]"
+
+
+def _masked_phone(match: re.Match[str]) -> str:
+    found = match.group(0)
+    return found if any(phones_match(store, found) for store in _STORE_PHONES) else "[phone]"
 
 
 def code_tokens(text: str) -> set[str]:

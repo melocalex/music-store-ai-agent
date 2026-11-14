@@ -4,7 +4,15 @@ from decimal import Decimal
 
 import pytest
 
-from music_store_agent.constants import LANDLINE_PHONE, PROVIDER_ERROR_MESSAGE, WHATSAPP_PHONE
+from music_store_agent.constants import (
+    DAILY_CAP_MESSAGE,
+    LANDLINE_PHONE,
+    PROVIDER_ERROR_MESSAGE,
+    QUOTA_DAY_MESSAGE,
+    RATE_LIMIT_MESSAGE,
+    STORE_EMAIL,
+    WHATSAPP_PHONE,
+)
 from music_store_agent.textutil import (
     amounts_in_text,
     brands_in,
@@ -116,3 +124,44 @@ def test_mask_pii_keeps_the_store_numbers_and_still_hides_the_customer() -> None
     assert mask_pii(f"Fixo {LANDLINE_PHONE}, cliente +55 67 99812-3456") == (
         f"Fixo {LANDLINE_PHONE}, cliente [phone]"
     )
+
+
+def test_mask_pii_keeps_the_store_email_and_hides_the_customer_email() -> None:
+    shown = mask_pii(f"Escreva para {STORE_EMAIL} ou responda lucas.mendes@jmail.com.")
+    assert shown == f"Escreva para {STORE_EMAIL} ou responda [email]."
+    assert mask_pii(STORE_EMAIL.upper()) == STORE_EMAIL.upper()
+
+
+def test_store_messages_survive_masking_with_every_store_contact() -> None:
+    for message in (
+        PROVIDER_ERROR_MESSAGE,
+        QUOTA_DAY_MESSAGE,
+        RATE_LIMIT_MESSAGE,
+        DAILY_CAP_MESSAGE,
+    ):
+        assert mask_pii(message) == message
+    contacts = f"WhatsApp {WHATSAPP_PHONE}, fixo {LANDLINE_PHONE}, e-mail {STORE_EMAIL}."
+    assert mask_pii(contacts) == contacts
+
+
+def test_a_date_and_hour_is_not_a_phone() -> None:
+    for text in (
+        "A loja reabre em 2026-03-23 09:00.",
+        "reabre em 2026-03-23 09:00",
+        "Entrega em 23/03/2026 às 09:00.",
+        "Pedido 12345, rastreio BRAB1234567BR.",
+    ):
+        assert mask_pii(text) == text
+
+
+def test_customer_phones_are_masked_in_every_common_layout() -> None:
+    for phone in (
+        LUCAS,
+        "+55 67 99812-3456",
+        "+55 (67) 99812-3456",
+        "067 99812-3456",
+        "67 99812 3456",
+        "67998123456",
+        "(67) 3384-1200",
+    ):
+        assert mask_pii(f"Ligue {phone}, por favor.") == "Ligue [phone], por favor."
