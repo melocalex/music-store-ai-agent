@@ -36,7 +36,6 @@ from music_store_agent.constants import (
     OUTPUT_RETRIES,
     PAYMENT_PIX,
     RETRY_PRICE,
-    SORT_PRICE_ASC,
     TOOL_RETRIES,
     TURN_TIMEOUT_SECONDS,
     Destination,
@@ -198,7 +197,7 @@ def search_products(
     query: str = "",
     category: str | None = None,
     max_price: str | None = None,
-    sort_by: SortOrder = SORT_PRICE_ASC,
+    sort_by: SortOrder | None = None,
     offset: int = 0,
 ) -> str:
     """Search instruments that are for sale, five rows at a time.
@@ -209,6 +208,8 @@ def search_products(
         category: Family in any spelling, for example "violões", "Violão", or "Guitarras".
         max_price: Budget in reais, for example "1000" or "1.000,00".
         sort_by: price_asc for the cheapest first, price_desc for the most expensive first.
+            Leave it out to sort by price from the cheapest, or from the most expensive when
+            the customer asks for an expensive one.
         offset: Row to start from, to see the next block.
     """
     ceiling = _money(max_price)
