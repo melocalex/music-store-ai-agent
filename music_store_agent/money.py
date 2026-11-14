@@ -1,7 +1,7 @@
 """Decimal price, installment, PIX, and freight rules."""
 
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from music_store_agent.constants import (
     CASH_INSTALLMENTS,
@@ -9,7 +9,7 @@ from music_store_agent.constants import (
     FREIGHT_FLAT,
     FREIGHT_FREE_FROM,
     INSTALLMENT_MAX,
-    MIN_ORDER_FOR_INSTALLMENTS,
+    MIN_PARCEL_2_TO_3,
     MIN_PARCEL_4_TO_6,
     MIN_PARCEL_7_TO_12,
     PIX_PERCENT,
@@ -25,9 +25,22 @@ _HUNDRED = Decimal(100)
 
 
 @dataclass(frozen=True)
+class Parcels:
+    """`count` parcels: the first one carries the leftover cents, the others are equal."""
+
+    count: int
+    first: Decimal
+    rest: Decimal
+
+    @property
+    def total(self) -> Decimal:
+        return self.first + self.rest * (self.count - 1)
+
+
+@dataclass(frozen=True)
 class InstallmentDecision:
     allowed: bool
-    parcel: Decimal | None
+    parcels: Parcels | None
     reason: str
 
 
@@ -55,23 +68,32 @@ def line_total(unit: Decimal, quantity: int) -> Decimal:
     return quantize(unit * Decimal(quantity))
 
 
-def parcel_value(total: Decimal, installments: int) -> Decimal:
-    return quantize(total / Decimal(installments))
+def split_parcels(total: Decimal, count: int) -> Parcels:
+    """Round each parcel down to the cent and put the remainder in the first one."""
+    rest = (total / Decimal(count)).quantize(CENT, rounding=ROUND_DOWN)
+    first = total - rest * (count - 1)
+    return Parcels(count, first, rest)
+
+
+def parcel_floor(installments: int) -> Decimal:
+    if installments <= TIER_LOW_MAX:
+        return MIN_PARCEL_2_TO_3
+    if installments <= TIER_MID_MAX:
+        return MIN_PARCEL_4_TO_6
+    return MIN_PARCEL_7_TO_12
 
 
 def decide_installments(total: Decimal, installments: int) -> InstallmentDecision:
     if installments == CASH_INSTALLMENTS:
-        return InstallmentDecision(True, total, "a vista")
+        return InstallmentDecision(True, split_parcels(total, CASH_INSTALLMENTS), "à vista")
     if installments < CASH_INSTALLMENTS or installments > INSTALLMENT_MAX:
-        return InstallmentDecision(False, None, "fora da faixa de 1 a 12")
-    parcel = parcel_value(total, installments)
-    if total < MIN_ORDER_FOR_INSTALLMENTS:
-        return InstallmentDecision(False, parcel, "pedido abaixo do minimo para parcelar")
-    if installments <= TIER_LOW_MAX:
-        return InstallmentDecision(True, parcel, "sem parcela minima")
-    if installments <= TIER_MID_MAX:
-        return InstallmentDecision(parcel >= MIN_PARCEL_4_TO_6, parcel, "faixa de 4 a 6")
-    return InstallmentDecision(parcel >= MIN_PARCEL_7_TO_12, parcel, "faixa de 7 a 12")
+        reason = f"fora da faixa de {CASH_INSTALLMENTS} a {INSTALLMENT_MAX}"
+        return InstallmentDecision(False, None, reason)
+    floor = parcel_floor(installments)
+    parcels = split_parcels(total, installments)
+    reason = f"parcela mínima de {format_brl(floor)} nessa faixa"
+    # The floor applies to the exact parcel, before rounding: R$ 479,97 in 6x is 79,995.
+    return InstallmentDecision(total >= floor * installments, parcels, reason)
 
 
 def max_installments(total: Decimal) -> int:
@@ -83,12 +105,19 @@ def max_installments(total: Decimal) -> int:
 
 
 def decide_freight(merchandise: Decimal, in_city: bool) -> FreightDecision:
+    """`merchandise` is the item value before the PIX discount.
+
+    The manual sets the free-freight threshold on the order value and does not say whether
+    PIX counts. We read it as the value before PIX, so paying by PIX never adds freight.
+    """
     if not in_city:
-        return FreightDecision("not_quoted",
-            None,
-            "Fora de Campo Grande o frete não é calculado aqui.")
+        note = "Fora de Campo Grande o frete não é calculado aqui."
+        return FreightDecision("not_quoted", None, note)
     if merchandise >= FREIGHT_FREE_FROM:
-        note = f"Frete grátis em Campo Grande a partir de {format_brl(FREIGHT_FREE_FROM)}."
+        note = (
+            f"Frete grátis em Campo Grande a partir de {format_brl(FREIGHT_FREE_FROM)} "
+            "em itens, valor antes do desconto PIX."
+        )
         return FreightDecision("free", None, note)
     note = f"Frete em Campo Grande: {format_brl(FREIGHT_FLAT)}."
     return FreightDecision("flat", FREIGHT_FLAT, note)

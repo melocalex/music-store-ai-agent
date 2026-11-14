@@ -13,7 +13,7 @@ from music_store_agent.constants import (
 from music_store_agent.db import load_database
 from music_store_agent.guard import AgentReply, PriceQuote, grounding_gap
 from music_store_agent.ledger import Ledger
-from music_store_agent.money import parcel_value
+from music_store_agent.money import split_parcels
 from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import format_brl
 
@@ -73,7 +73,7 @@ def test_quote_lines_pass_with_the_prompt_convention() -> None:
     c40 = find_products(products, "C40")[0]
     ledger = Ledger()
     quote_text(c40, 1, PAYMENT_CREDIT, TIER_MID_MAX, True, ledger)
-    parcel = parcel_value(effective_price(c40), TIER_MID_MAX)
+    parcel = split_parcels(effective_price(c40), TIER_MID_MAX).rest
     text = f"O C40 sai em {TIER_MID_MAX}x de {format_brl(parcel)}."
     assert grounding_gap(text, [PriceQuote(product_id=c40.product_id, amount=parcel)], ledger).ok
     assert not grounding_gap(text, [PriceQuote(amount=parcel)], ledger).ok

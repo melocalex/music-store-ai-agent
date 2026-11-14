@@ -4,10 +4,11 @@ from datetime import date
 
 from music_store_agent.catalog import effective_price, find_products, is_sellable, load_catalog
 from music_store_agent.clock import clock_at
-from music_store_agent.constants import FREIGHT_FLAT, PAYMENT_PIX
+from music_store_agent.constants import FREIGHT_FLAT, PAYMENT_CREDIT, PAYMENT_PIX, TIER_MID_MAX
 from music_store_agent.db import load_database
 from music_store_agent.hours import hours_answer
 from music_store_agent.ledger import Ledger
+from music_store_agent.money import split_parcels
 from music_store_agent.orders import Identity, load_orders, verify
 from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import format_brl
@@ -59,3 +60,20 @@ def test_incomplete_contact_does_not_count() -> None:
     text = verify(identity, load_orders(load_database()), 4, None, None)
     assert "completo" in text
     assert identity.failed_verifications == 0
+
+
+def test_promo_quote_shows_the_original_price_and_the_percent() -> None:
+    ht = _product("HT-100")
+    text = quote_text(ht, 1, PAYMENT_PIX, 1, True, Ledger())
+    assert format_brl(ht.list_price) in text
+    assert f"{ht.promos.percent}%" in text
+
+
+def test_installment_quote_puts_the_leftover_cents_in_the_first_parcel() -> None:
+    c40 = _product("C40")
+    ledger = Ledger()
+    text = quote_text(c40, 1, PAYMENT_CREDIT, TIER_MID_MAX, True, ledger)
+    parcels = split_parcels(effective_price(c40), TIER_MID_MAX)
+    assert format_brl(parcels.rest) in text
+    assert format_brl(parcels.first) in text
+    assert ledger.product_has(c40.product_id, parcels.first)

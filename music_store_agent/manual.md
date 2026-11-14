@@ -56,10 +56,11 @@ Em Black Friday, aniversário da loja e Natal o horário pode mudar. Sem aviso n
 Parcelamento, pela regra detalhada:
 
 - 1x é à vista.
-- Pedido abaixo de R$ 50,00 não parcela.
-- De 2x a 3x, sem parcela mínima, se o pedido atingir R$ 50,00.
+- De 2x a 3x, parcela mínima de R$ 50,00.
 - De 4x a 6x, parcela mínima de R$ 80,00.
 - De 7x a 12x, parcela mínima de R$ 100,00. Os R$ 100,00 são só desta faixa.
+- A parcela mínima vale para a divisão exata, antes do arredondamento.
+- Os centavos que sobram da divisão vão na primeira parcela.
 - PIX mais cartão só acima de R$ 2.000,00. No valor exato, não.
 
 Não prometa um desconto que o sistema não devolveu.
