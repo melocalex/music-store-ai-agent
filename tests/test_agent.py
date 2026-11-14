@@ -312,6 +312,13 @@ def test_budget_text_is_parsed_and_nonsense_asks_for_a_retry() -> None:
         _money("mil e poucos")
 
 
+def test_a_budget_of_zero_or_less_asks_for_a_retry() -> None:
+    assert _money("1") == Decimal("1.00")
+    for wrong in ("0", "R$ 0,00", 0, -5, Decimal("-5")):
+        with pytest.raises(ModelRetry, match="maior que zero"):
+            _money(wrong)
+
+
 def _tool_text(messages) -> str:
     return "\n".join(
         str(part.content)
