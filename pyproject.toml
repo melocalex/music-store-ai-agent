@@ -1,0 +1,48 @@
+[project]
+name = "music-store-ai-agent"
+version = "0.1.0"
+description = "Virtual assistant for Empório da Música. Prices come from tools, never from guesswork."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Alexandre Melo" }]
+dependencies = [
+  "pydantic>=2",
+  "pydantic-ai>=2.68,<3",
+  "streamlit>=1.40",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.8", "pyyaml>=6"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["music_store_agent*", "evals*", "examples*"]
+
+[tool.setuptools.package-data]
+music_store_agent = ["manual.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+preview = true
+src = ["music_store_agent", "tests", "evals", "examples", "app.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "C901", "PLR1702", "PLR0913", "PLR0915", "PLR5501", "PLR1714", "SIM114"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-nested-blocks = 4
+max-statements = 50
