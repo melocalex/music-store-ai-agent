@@ -12,7 +12,7 @@ from music_store_agent.constants import (
     PAYMENT_SPLIT,
     SPLIT_PAYMENT_ABOVE,
 )
-from music_store_agent.ledger import Ledger
+from music_store_agent.ledger import FREIGHT, THRESHOLD, Ledger
 from music_store_agent.money import (
     Parcels,
     decide_freight,
@@ -76,7 +76,7 @@ def _payment_line(product: Product, merchandise: Decimal, payment: str, ledger: 
 
 
 def _split_line(merchandise: Decimal, ledger: Ledger) -> str:
-    ledger.add_policy(SPLIT_PAYMENT_ABOVE)
+    ledger.add_policy(SPLIT_PAYMENT_ABOVE, THRESHOLD)
     ceiling = format_brl(SPLIT_PAYMENT_ABOVE)
     if split_allowed(merchandise):
         return f"PIX mais cartão é permitido acima de {ceiling}. Não calculo a divisão."
@@ -117,9 +117,9 @@ def _parcel_text(product: Product, parcels: Parcels, ledger: Ledger) -> str:
 def _freight_line(merchandise: Decimal, in_city: bool, ledger: Ledger) -> str:
     decision = decide_freight(merchandise, in_city)
     if decision.kind == "flat" and decision.amount is not None:
-        ledger.add_policy(decision.amount)
+        ledger.add_policy(decision.amount, FREIGHT)
         amount = format_amount(decision.amount)
         return decision.note + f" Regra: product_id=null amount={amount}."
     if decision.kind == "free":
-        ledger.add_policy(FREIGHT_FREE_FROM)
+        ledger.add_policy(FREIGHT_FREE_FROM, FREIGHT)
     return decision.note

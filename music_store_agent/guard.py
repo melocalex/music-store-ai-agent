@@ -6,7 +6,16 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from music_store_agent.ledger import Ledger
+from music_store_agent.ledger import (
+    BUDGET,
+    FLOOR,
+    FREIGHT,
+    ORDER_TOTAL,
+    RULE,
+    THRESHOLD,
+    Ledger,
+    RuleKind,
+)
 from music_store_agent.textutil import (
     amounts_in_text,
     code_tokens,
@@ -18,6 +27,26 @@ from music_store_agent.textutil import (
 # A sentence ends at ! ? ; a newline, or a period that is not a decimal point.
 _BOUNDARY = re.compile(r"[!?;\n]|\.(?!\d)")
 _CODE_SPAN = 3
+# A rule value may share a sentence with a product only next to a word of its own kind, so
+# "o frete do C40 é R$ 35,00" passes and "o C40 custa R$ 35,00" does not.
+_KIND_WORDS: dict[RuleKind, tuple[str, ...]] = {
+    FREIGHT: ("frete", "fretes", "entrega", "envio", "shipping", "freight", "delivery"),
+    FLOOR: ("minima", "minimo", "minimas", "minimos", "piso", "minimum", "pelo menos", "at least"),
+    THRESHOLD: ("acima", "a partir", "mais de", "superior", "above", "over"),
+    ORDER_TOTAL: ("total", "pedido", "pago", "paga", "order", "paid"),
+    BUDGET: (
+        "ate",
+        "teto",
+        "orcamento",
+        "limite",
+        "abaixo",
+        "menos de",
+        "budget",
+        "up to",
+        "under",
+    ),
+    RULE: ("regra", "manual", "politica", "rule", "policy"),
+}
 
 
 class PriceQuote(BaseModel):
@@ -69,7 +98,7 @@ def grounding_gap(
     return GroundingGap(
         tuple(missing),
         tuple(bad),
-        tuple(_crossed(message, quotes, {**ledger.names, **(catalog or {})})),
+        tuple(_crossed(message, quotes, {**ledger.names, **(catalog or {})}, ledger)),
         tuple(percents),
         tuple(unknown),
     )
@@ -86,8 +115,14 @@ def _quote_ok(quote: PriceQuote, ledger: Ledger) -> bool:
     return ledger.product_has(quote.product_id, quote.amount)
 
 
-def _crossed(message: str, quotes: list[PriceQuote], names: dict[int, str]) -> list[str]:
-    """A sentence that names products may only carry prices quoted for one of them."""
+def _crossed(
+    message: str, quotes: list[PriceQuote], names: dict[int, str], ledger: Ledger
+) -> list[str]:
+    """A sentence that names products may only carry prices quoted for one of them.
+
+    A null-id value may sit there too, but only next to a word of its kind: a freight, a
+    floor, a threshold, an order total, or the customer's budget.
+    """
     owners: dict[Decimal, set[int | None]] = {}
     for quote in quotes:
         owners.setdefault(quote.amount, set()).add(quote.product_id)
@@ -99,9 +134,19 @@ def _crossed(message: str, quotes: list[PriceQuote], names: dict[int, str]) -> l
             continue
         for amount in sorted(amounts_in_text(sentence)):
             ids = owners.get(amount, set())
-            if ids and None not in ids and named.isdisjoint(ids):
-                crossed.append(_label(min(i for i in ids if i is not None), amount))
+            if not ids or not named.isdisjoint(ids):
+                continue
+            if None in ids and _names_kind(sentence, ledger.rule_kinds(amount)):
+                continue
+            products = sorted(i for i in ids if i is not None)
+            crossed.append(_label(products[0] if products else None, amount))
     return crossed
+
+
+def _names_kind(sentence: str, kinds: set[RuleKind]) -> bool:
+    folded = fold(sentence)
+    words = (word for kind in kinds for word in _KIND_WORDS[kind])
+    return any(re.search(rf"\b{re.escape(word)}\b", folded) for word in words)
 
 
 def _codes(names: dict[int, str]) -> dict[str, set[int]]:

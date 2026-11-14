@@ -103,14 +103,15 @@ The six CSVs load once into an in-memory SQLite database, which then switches to
 Each tool records what it printed:
 
 - A price, a PIX value, a line total, or an installment goes under its product id, with the product name.
-- A rule value goes in the policy set: freight, a floor, the budget the customer gave, a stored order total, any amount in a manual section.
+- A rule value goes in the rule map with its kind: freight, a floor, a threshold, a stored order total. An amount from a manual section takes the kind of the constant it equals.
+- The budget the customer gave, as the search echoes it, goes in a set of its own.
 - Every percent printed by a catalog, quote, promotion, or policy tool goes in the percent set.
 
 The final reply carries `message` and `quotes`, a list of `(product_id, amount)` pairs. The validator in `agent.py` calls `grounding_gap` in `guard.py`, which rejects the reply when:
 
 1. an amount in the message is not in `quotes`;
-2. a quote with a product id is not in that product's bucket, or a quote with a null id is not in the policy set;
-3. a sentence names catalog products and carries an amount quoted for none of them;
+2. a quote with a product id is not in that product's bucket, or a quote with a null id is neither a rule value nor the budget;
+3. a sentence names catalog products and carries an amount quoted for none of them, unless the amount is a null-id value and the sentence has a word of its kind;
 4. a percent in the message never appeared in tool text.
 
 A rejection counts as a firing. It also counts as a true catch when some amount is absent from the whole ledger, which means the model made the number up rather than misattributing a real one.
