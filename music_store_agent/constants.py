@@ -7,12 +7,10 @@ from typing import Literal
 STORE_NAME = "Empório da Música"
 ASSISTANT_NAME = "Aria"
 STORE_TIMEZONE = "America/Campo_Grande"
-STORE_CITY = "Campo Grande"
 
 WHATSAPP_PHONE = "(67) 3321-4500"
 LANDLINE_PHONE = "(67) 3341-4444"
 STORE_EMAIL = "contato@emporiodamusica.com.br"
-ACCENTED_EMAIL = "contato@empóriodamusica.com.br"
 STORE_ADDRESS = "Rua 14 de Maio, 3200 — Centro, Campo Grande - MS, 79202-333"
 
 MODEL_PROVIDER = "google"
@@ -101,7 +99,6 @@ SORT_NAME = "name"
 
 TRACKING_CODE_PATTERN = r"BR[A-Z0-9]{9}BR"
 ORDER_CANCELLED = "cancelled"
-ORDER_DELIVERED = "delivered"
 OPEN_DELIVERY_STATUSES = frozenset({"shipped", "confirmed", "pending"})
 PAYMENT_PIX = "pix"
 PAYMENT_DEBIT = "debit"
