@@ -114,7 +114,7 @@ The final reply carries `message` and `quotes`, a list of `(product_id, amount)`
 3. a sentence names catalog products and carries an amount quoted for none of them, unless the amount is a null-id value and the sentence has a word of its kind;
 4. a percent in the message never appeared in tool text.
 
-A rejection counts as a firing. It also counts as a true catch when some amount is absent from the whole ledger, which means the model made the number up rather than misattributing a real one.
+Each rejection counts as a firing, retries included. A turn counts once as a true catch when the reply carried an amount that no tool printed anywhere in the conversation, which means the model made the number up rather than misattributing a real one. A price on the wrong product, or a value a tool printed but the ledger missed, is a firing without a catch.
 
 ## Prompt and manual
 
