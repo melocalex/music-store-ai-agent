@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import (
+    FallbackExceptionGroup,
+    ModelAPIError,
+    RunTimedOut,
+    UnexpectedModelBehavior,
+)
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
@@ -30,6 +35,7 @@ from music_store_agent.constants import (
     PROVIDER_ERROR_MESSAGE,
     SAFE_PRICE_MESSAGE,
     TURN_ERROR_MESSAGE,
+    TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import Deps, make_deps
@@ -47,7 +53,7 @@ EXIT_STOPPED = 3
 
 
 class RunStopped(Exception):
-    """The provider kept refusing. The cases done so far are still reported."""
+    """The provider kept refusing, or a turn ran out of time. Cases done so far are reported."""
 
     def __init__(self, case_id: str, reason: str) -> None:
         super().__init__(f"{case_id}: {reason}")
@@ -179,10 +185,13 @@ async def _attempt(
     """One turn, backing off on a rate limit. None means the turn failed inside the agent."""
     for delay in (*BACKOFF_SECONDS, None):
         try:
-            return await agent.run(prompt, deps=deps, message_history=history)
+            return await agent.run(
+                prompt, deps=deps, message_history=history, timeout=TURN_TIMEOUT_SECONDS
+            )
         except UnexpectedModelBehavior:
             return None
-        except FallbackExceptionGroup as error:
+        except (FallbackExceptionGroup, RunTimedOut) as error:
+            # Both models failed, or the turn ran past the budget a customer waits for.
             raise RunStopped(case_id, type(error).__name__) from error
         except ModelAPIError as error:
             if provider_message(error) == PROVIDER_ERROR_MESSAGE or delay is None:

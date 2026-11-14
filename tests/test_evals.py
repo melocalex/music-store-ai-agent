@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import copy
+import time
 from pathlib import Path
 
 import yaml
@@ -92,6 +93,25 @@ def test_both_models_down_stops_the_run_instead_of_crashing_it() -> None:
     result = asyncio.run(_one_pass(cases, stub=False, model=chain))
     assert result.stopped is not None
     assert result.stopped.case_id == cases[0]["id"]
+
+
+def test_a_turn_past_its_budget_stops_the_run_instead_of_hanging(monkeypatch) -> None:
+    hang = 5.0
+
+    async def stalls(_messages, _info):
+        await asyncio.sleep(hang)
+        raise AssertionError("the turn budget should have stopped this request")
+
+    monkeypatch.setattr(run_module, "TURN_TIMEOUT_SECONDS", 0.2)
+    cases = _cases()[:2]
+    started = time.monotonic()
+    result = asyncio.run(_one_pass(cases, stub=False, model=FunctionModel(stalls)))
+    assert time.monotonic() - started < hang / 5
+    assert result.stopped is not None
+    assert result.stopped.case_id == cases[0]["id"]
+    assert result.stopped.reason == "RunTimedOut"
+    args = argparse.Namespace(stub=False, model=None, runs=1)
+    assert f"Resume with --from {cases[0]['id']}" in _report([result], args)
 
 
 def test_a_rate_limit_is_retried(monkeypatch) -> None:
