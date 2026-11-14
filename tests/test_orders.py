@@ -14,6 +14,7 @@ from music_store_agent.constants import (
     NOT_YOUR_ORDER,
     PREFERENCE_DAYS,
     REGRET_DAYS,
+    UNESTIMATED_ORDER_DAYS,
     VERIFICATION_FAILED,
     VERIFICATION_LOCKED,
 )
@@ -24,6 +25,7 @@ from music_store_agent.orders import (
     defect_line,
     explain_after_sales,
     is_late,
+    is_stale,
     load_order,
     preference_line,
     read_order,
@@ -202,6 +204,24 @@ def test_late_starts_the_day_after_the_estimate() -> None:
     assert is_late(order, estimate + timedelta(days=1))
     delivered = replace(order, pay=replace(order.pay, status="delivered"))
     assert not is_late(delivered, estimate + timedelta(days=1))
+
+
+def test_an_open_order_with_no_estimate_is_flagged_once_it_is_old() -> None:
+    conn = load_database()
+    order = load_order(conn, 9)
+    assert order.ship.estimate is None and order.pay.status == "confirmed"
+    limit = order.ship.ordered_on + timedelta(days=UNESTIMATED_ORDER_DAYS)
+    assert not is_stale(order, limit)
+    assert is_stale(order, limit + timedelta(days=1))
+    identity = Identity()
+    verify(identity, conn, 9, order.buyer.email, None)
+    text = read_order(identity, conn, 9, TODAY, Ledger())
+    assert "não tem estimativa de entrega gravada" in text
+    recent = load_order(conn, 12)
+    assert recent.ship.estimate is None
+    assert not is_stale(recent, TODAY)
+    done = replace(order, pay=replace(order.pay, status="delivered"))
+    assert not is_stale(done, TODAY)
 
 
 def test_preference_window_states_that_its_start_is_unclear() -> None:

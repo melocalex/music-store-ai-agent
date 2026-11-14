@@ -112,6 +112,9 @@ SORT_NAME = "name"
 TRACKING_CODE_PATTERN = r"BR[A-Z0-9]{9}BR"
 ORDER_CANCELLED = "cancelled"
 OPEN_DELIVERY_STATUSES = frozenset({"shipped", "confirmed", "pending"})
+# The longest stored delivery estimate is 15 days after purchase. An open order with no
+# estimate that is older than that is flagged for the team.
+UNESTIMATED_ORDER_DAYS = 15
 PAYMENT_PIX = "pix"
 PAYMENT_DEBIT = "debit"
 PAYMENT_CREDIT = "credit"
