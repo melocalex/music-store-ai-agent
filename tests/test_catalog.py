@@ -81,6 +81,14 @@ def test_codes_takamine_and_ukulele_concert() -> None:
     assert "soprano" not in concert.casefold()
 
 
+def test_a_parcel_count_in_the_query_is_not_a_model_code() -> None:
+    products = _products()
+    assert [p.product_id for p in find_products(products, "C40 em 4x")] == [81]
+    assert [p.product_id for p in find_products(products, "Bass 4X")] == [138]
+    assert [p.product_id for p in find_products(products, "yamaha bass 3x")] == [137]
+    assert find_products(products, "4x") == []
+
+
 def test_empty_wind_category() -> None:
     products = _products()
     text = search_catalog(products, CatalogQuery(text="flauta"), Ledger())
