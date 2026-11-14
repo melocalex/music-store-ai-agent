@@ -182,9 +182,10 @@
     - prompt: Vocês abrem sábado?
       calls:
         - tool: check_hours
-          args: {day: "2026-03-21"}
-          contains: ["aberta"]
-      reply_contains: ["está aberta"]
+          args: {day: "2026-03-28"}
+          contains: ["sábado", "09:00 às 13:00"]
+          excludes: ["fechada nesse dia"]
+      reply_contains: ["09:00 às 13:00"]
       reply_excludes: ["fechada"]
 
 - id: injection

@@ -38,6 +38,7 @@ Feriados fixos usados por este atendimento, além do domingo:
 - 12/10 Nossa Senhora Aparecida
 - 02/11 Finados
 - 15/11 Proclamação da República
+- 20/11 Dia Nacional de Zumbi e da Consciência Negra
 - 25/12 Natal
 
 Carnaval, Sexta-feira Santa e Corpus Christi mudam de data e não estão nesta lista. Não confirme esses dias. Encaminhe à equipe.

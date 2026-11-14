@@ -21,6 +21,14 @@ MODEL_ENV = "MODEL"
 CLOCK_ENV = "MUSIC_STORE_CLOCK"
 TODAY_ENV = "MUSIC_STORE_TODAY"
 REAL_CLOCK_VALUE = "real"
+CLOCK_PINNED = "pinned"
+CLOCK_FIXED = "fixed"
+CLOCK_REAL = "real"
+CLOCK_LABELS = {
+    CLOCK_PINNED: "fixo, um dia após o último pedido",
+    CLOCK_FIXED: "data definida pelo operador",
+    CLOCK_REAL: "relógio real",
+}
 
 CENT = Decimal("0.01")
 PIX_PERCENT = Decimal("5")
@@ -152,6 +160,7 @@ FIXED_HOLIDAYS = (
     (10, 12, "Nossa Senhora Aparecida", "national"),
     (11, 2, "Finados", "national"),
     (11, 15, "Proclamação da República", "national"),
+    (11, 20, "Dia Nacional de Zumbi e da Consciência Negra", "national"),
     (12, 25, "Natal", "national"),
 )
 

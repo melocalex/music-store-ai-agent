@@ -39,8 +39,7 @@ async def _chat(args: argparse.Namespace) -> None:
         real=args.real_clock,
         phone=args.phone,
     )
-    label = _clock_label(deps.clock.pinned)
-    print(f"Data de referência: {deps.clock.today().isoformat()} ({label})")
+    print(f"Data de referência: {deps.clock.today().isoformat()} ({deps.clock.label})")
     agent = build_agent(_stub_model() if args.stub else None)
     history: list[ModelMessage] = []
     turns = 0
@@ -90,9 +89,3 @@ def _day(raw: str | None) -> date | None:
     if not raw:
         return None
     return date.fromisoformat(raw)
-
-
-def _clock_label(pinned: bool) -> str:
-    if pinned:
-        return "fixo"
-    return "real"

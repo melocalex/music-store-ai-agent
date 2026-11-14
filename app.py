@@ -44,8 +44,7 @@ def main() -> None:
     st.set_page_config(page_title=STORE_NAME, page_icon="🎸")
     _ensure_session()
     clock = st.session_state.deps.clock
-    kind = "fixo" if clock.pinned else "real"
-    st.info(f"Data de referência: {clock.today().isoformat()} (relógio {kind}).")
+    st.info(f"Data de referência: {clock.today().isoformat()} ({clock.label}).")
     st.title(ASSISTANT_NAME)
     st.caption(f"Assistente virtual do {STORE_NAME}. {DISCLAIMER}")
     _sidebar()

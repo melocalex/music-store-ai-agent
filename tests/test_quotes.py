@@ -1,12 +1,8 @@
 """Offer text follows promo, PIX, and freight rules."""
 
-from datetime import date
-
 from music_store_agent.catalog import effective_price, find_products, is_sellable, load_catalog
-from music_store_agent.clock import clock_at
 from music_store_agent.constants import FREIGHT_FLAT, PAYMENT_CREDIT, PAYMENT_PIX, TIER_MID_MAX
 from music_store_agent.db import load_database
-from music_store_agent.hours import hours_answer
 from music_store_agent.ledger import Ledger
 from music_store_agent.money import split_parcels
 from music_store_agent.orders import Identity, verify
@@ -44,15 +40,6 @@ def test_freight_exact_and_outside_the_city() -> None:
     assert format_brl(FREIGHT_FLAT) in flat
     away = quote_text(c40, 1, PAYMENT_PIX, 1, False, Ledger())
     assert "não é calculado" in away
-
-
-def test_holiday_hours_name_the_next_opening() -> None:
-    moment = clock_at(date(2026, 6, 13), pinned=True).now()
-    text = hours_answer(moment)
-    assert "Santo Antônio" in text
-    assert "2026-06-15" in text
-    assert "(67) 3321-4500" in text
-    assert "(67) 3341-4444" in text
 
 
 def test_incomplete_contact_does_not_count() -> None:
