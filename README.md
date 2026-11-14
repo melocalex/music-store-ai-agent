@@ -13,7 +13,8 @@
 Aria is the virtual assistant for Empório da Música, a fictional instrument shop in Campo Grande, Mato Grosso do Sul. She answers from the catalog, the order book, and a short manual. A price that no tool returned does not reach the customer.
 
 <p align="center">
-  <a href="LIVE_DEMO_URL"><strong>Try it live, no API key needed</strong></a>
+  <a href="LIVE_DEMO_URL"><strong>Try it live, no API key needed</strong></a><br>
+  <sub>Placeholder: <code>LIVE_DEMO_URL</code> is replaced with the hosted address once the app is deployed.</sub>
 </p>
 
 ## 🧭 What is distinctive
@@ -44,7 +45,7 @@ The hosted page pins the store clock, shows sample questions, and lists the tool
 
 ### Known failures
 
-No live score is checked in. Fill the table from `evals/results/` after a real run.
+No live score is checked in yet. Live runs are written to `evals/results/`.
 
 | Situation | What you will see |
 | --- | --- |
@@ -193,8 +194,6 @@ With more time I would expose the tools through MCP. They are plain typed functi
 The design was reviewed before the code. Implementation followed that review. Each file then went through a smell-gate audit, and the money and policy calls stayed human decisions.
 
 Before finalizing the design, I reviewed several public approaches to similar store-assistant datasets to make sure the data-quality findings and guardrails go beyond the common baseline; no code was reused.
-
-TODO(author): replace this paragraph with your own note about the workflow.
 
 ## 📄 License
 
