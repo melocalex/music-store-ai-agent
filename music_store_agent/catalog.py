@@ -87,6 +87,9 @@ _SPEC_TAGS = {
 }
 _EXPENSIVE = frozenset({"caro", "cara", "caros", "expensive", "top"})
 _SORT_WORDS = _EXPENSIVE | {"barato", "barata", "baratos", "baratas", "cheap", "cheapest"}
+# "não seja caro" asks for a cheap one: a negation up to three words before "caro" cancels it.
+_NEGATIONS = frozenset({"nao", "nem", "sem", "not", "no"})
+_NEGATION_REACH = 3
 _STATE_LABELS = {
     STATE_AVAILABLE: "disponível",
     STATE_OUT_OF_STOCK: "sem estoque agora",
@@ -238,7 +241,7 @@ class CatalogQuery:
     text: str = ""
     category: str | None = None
     max_price: Decimal | None = None
-    sort_by: str = SORT_PRICE_ASC
+    sort_by: str | None = None
     offset: int = 0
 
 
@@ -414,10 +417,15 @@ def _vocabulary(products: tuple[Product, ...] | list[Product]) -> set[str]:
 
 
 def _sort_order(request: CatalogQuery) -> str:
-    if request.sort_by != SORT_PRICE_ASC:
+    """An explicit sort wins. Without one, "caro" sorts from the top, unless it is negated."""
+    if request.sort_by is not None:
         return request.sort_by
-    words = set(re.findall(r"[a-z]+", _normalized(request.text)))
-    return SORT_PRICE_DESC if words & _EXPENSIVE else SORT_PRICE_ASC
+    words = re.findall(r"[a-z]+", _normalized(request.text))
+    for index, word in enumerate(words):
+        negated = _NEGATIONS.intersection(words[max(0, index - _NEGATION_REACH) : index])
+        if word in _EXPENSIVE and not negated:
+            return SORT_PRICE_DESC
+    return SORT_PRICE_ASC
 
 
 def _sort(products: list[Product], sort_by: str) -> list[Product]:

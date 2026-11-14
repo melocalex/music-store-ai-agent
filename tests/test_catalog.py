@@ -164,6 +164,21 @@ def test_expensive_words_sort_from_the_top() -> None:
     assert not cheap.splitlines()[1].startswith(top.name)
 
 
+def test_an_explicit_sort_and_a_negated_caro_keep_the_cheapest_first() -> None:
+    products = _products()
+    violoes = [p for p in products if p.category == "Violões" and is_sellable(p)]
+    cheapest = min(violoes, key=lambda p: (effective_price(p), p.name))
+    for request in (
+        CatalogQuery(text="violão que não seja caro"),
+        CatalogQuery(text="violão caro", sort_by=SORT_PRICE_ASC),
+    ):
+        first = search_catalog(products, request, Ledger()).splitlines()[1]
+        assert first.startswith(cheapest.name), request
+    top = max(violoes, key=effective_price)
+    most = search_catalog(products, CatalogQuery(text="violão caro"), Ledger()).splitlines()[1]
+    assert most.startswith(top.name)
+
+
 def test_ids_and_empty_queries() -> None:
     products = _products()
     assert [product.product_id for product in find_products(products, "95")] == [95]
