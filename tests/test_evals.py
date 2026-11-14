@@ -6,13 +6,14 @@ import copy
 from pathlib import Path
 
 import yaml
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelHTTPError, ModelUnavailableError
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 import evals.run as run_module
 from evals.run import _case, _one_pass, _report, main
 from evals.score import score_case
+from music_store_agent.agent import model_chain
 from music_store_agent.quality import render
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,19 @@ def test_a_provider_failure_stops_the_run_and_names_the_resume_point() -> None:
     args = argparse.Namespace(stub=False, model=None, runs=1)
     report = _report([result], args)
     assert f"Resume with --from {cases[0]['id']}" in report
+
+
+def _outage(_messages, _info):
+    """A 503 the way the Gemini adapter raises it, with its category."""
+    raise ModelHTTPError.for_category(ModelUnavailableError, status_code=503, model_name="gemini")
+
+
+def test_both_models_down_stops_the_run_instead_of_crashing_it() -> None:
+    cases = _cases()[:2]
+    chain = model_chain(FunctionModel(_outage), FunctionModel(_outage))
+    result = asyncio.run(_one_pass(cases, stub=False, model=chain))
+    assert result.stopped is not None
+    assert result.stopped.case_id == cases[0]["id"]
 
 
 def test_a_rate_limit_is_retried(monkeypatch) -> None:

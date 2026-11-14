@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
@@ -33,7 +33,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import Deps, make_deps
-from music_store_agent.run import provider_message
+from music_store_agent.run import log_answering_model, provider_message
 from music_store_agent.textutil import amounts_in_text
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
@@ -161,6 +161,7 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
             continue
         history = list(result.all_messages())
         fresh = list(result.new_messages())
+        log_answering_model(agent, fresh)
         calls, returns = _activity(fresh)
         transcript.append({"reply": result.output.message, "calls": calls, "returns": returns})
         requests.append(sum(isinstance(message, ModelResponse) for message in fresh))
@@ -181,6 +182,8 @@ async def _attempt(
             return await agent.run(prompt, deps=deps, message_history=history)
         except UnexpectedModelBehavior:
             return None
+        except FallbackExceptionGroup as error:
+            raise RunStopped(case_id, type(error).__name__) from error
         except ModelAPIError as error:
             if provider_message(error) == PROVIDER_ERROR_MESSAGE or delay is None:
                 raise RunStopped(case_id, type(error).__name__) from error
