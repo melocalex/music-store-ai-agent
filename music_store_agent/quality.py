@@ -18,6 +18,7 @@ from music_store_agent.db import (
     fetch_promotions,
     load_database,
 )
+from music_store_agent.money import quantize
 from music_store_agent.textutil import description_conflicts
 
 REPORT_PATH = Path(__file__).resolve().parents[1] / "docs" / "data-quality.md"
@@ -167,8 +168,7 @@ def _installment_history(conn) -> tuple[str, str, str]:
         if not parts.endswith("x"):
             continue
         count = int(parts[:-1])
-        parcel = _decimal(row["total_brl"]) / count
-        shown = parcel.quantize(_cent())
+        shown = quantize(_decimal(row["total_brl"]) / count)
         notes.append(f"order {row['order_id']} {row['payment_method']} parcel {shown}")
     finding = "Installment history: " + "; ".join(notes)
     return finding, "History is not a precedent for the installment floors", "c40-installments"
@@ -259,12 +259,6 @@ def _decimal(value: object):
     from decimal import Decimal
 
     return Decimal(str(value))
-
-
-def _cent():
-    from decimal import Decimal
-
-    return Decimal("0.01")
 
 
 def _date(value: object):
