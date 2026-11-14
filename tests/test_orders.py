@@ -118,6 +118,17 @@ def test_stored_total_items_and_labels() -> None:
     assert read_order(identity, conn, 1, TODAY, Ledger()) == NOT_YOUR_ORDER
 
 
+def test_a_cancelled_order_shows_its_stored_reason() -> None:
+    conn = load_database()
+    identity = Identity()
+    order = load_order(conn, 19)
+    assert order.pay.status == "cancelled"
+    verify(identity, conn, 19, order.buyer.email, None)
+    text = read_order(identity, conn, 19, TODAY, Ledger())
+    assert f"Motivo do cancelamento gravado: {order.ship.notes}." in text
+    assert "observação operacional" not in text
+
+
 def test_defect_window_is_inclusive_on_day_thirty() -> None:
     bought = date(2026, 1, 1)
     inside = defect_line(bought, bought + timedelta(days=DEFECT_EXCHANGE_DAYS))
