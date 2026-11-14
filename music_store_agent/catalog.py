@@ -295,14 +295,28 @@ def _empty(category: str | None) -> str:
     return "Não encontrei itens à venda com esse filtro."
 
 
+def promo_text(product: Product) -> str | None:
+    """The manual asks for the original price and the percent next to every promo price."""
+    if product.promos.percent is None:
+        return None
+    original = format_brl(product.list_price)
+    price = format_brl(effective_price(product))
+    return f"de {original} por {price} ({product.promos.campaign}, {product.promos.percent}%)"
+
+
 def _hit(product: Product, ledger: Ledger) -> str:
     price = effective_price(product)
     ledger.add_product(product.product_id, price, product.name)
     shown = format_brl(price)
-    return (
+    row = (
         f"{product.name} | id {product.product_id} | {product.category} | "
         f"amount={format_amount(price)} | {shown}"
     )
+    promo = promo_text(product)
+    if promo is None:
+        return row
+    ledger.add_product(product.product_id, product.list_price, product.name)
+    return f"{row} | promoção {promo}"
 
 
 def similar_products(products: tuple[Product, ...], product: Product) -> list[Product]:
@@ -386,12 +400,11 @@ def _table_price(product: Product, ledger: Ledger) -> str:
 def _promo_price(product: Product, ledger: Ledger) -> str:
     price = effective_price(product)
     ledger.add_product(product.product_id, price, product.name)
-    shown = format_brl(price)
-    percent = product.promos.percent
-    campaign = product.promos.campaign
+    ledger.add_product(product.product_id, product.list_price, product.name)
     return (
-        f"Promoção ativa {campaign} {percent}%: "
-        f"product_id={product.product_id} amount={format_amount(price)} {shown}. PIX não acumula."
+        f"Promoção ativa {product.name}, {promo_text(product)}: "
+        f"product_id={product.product_id} amount={format_amount(price)} "
+        f"preço original amount={format_amount(product.list_price)}. PIX não acumula."
     )
 
 
