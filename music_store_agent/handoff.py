@@ -4,7 +4,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from music_store_agent.constants import HANDOFF_SUMMARY_CAP
+from music_store_agent.clock import is_open_at, next_opening_label
+from music_store_agent.constants import (
+    HANDOFF_REASON_CAP,
+    HANDOFF_SUMMARY_CAP,
+    TEAM_REPLY_BUSINESS_HOURS,
+)
 from music_store_agent.textutil import mask_pii
 
 
@@ -18,9 +23,18 @@ def write_handoff(
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "at": when.isoformat(timespec="seconds"),
-        "reason": reason,
+        "reason": mask_pii(reason)[:HANDOFF_REASON_CAP],
         "summary": mask_pii(summary)[:HANDOFF_SUMMARY_CAP],
         "verified_customer_id": customer_id,
     }
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def reply_window(now: datetime) -> str:
+    """When the team picks the case up, from the store clock."""
+    within = f"A equipe responde em até {TEAM_REPLY_BUSINESS_HOURS} horas úteis."
+    if is_open_at(now):
+        return within
+    opening = next_opening_label(now.date(), now.time().replace(microsecond=0))
+    return f"A loja está fechada agora e reabre em {opening}. {within}"

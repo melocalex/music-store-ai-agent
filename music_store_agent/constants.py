@@ -42,6 +42,7 @@ DEFECT_EXCHANGE_DAYS = 30
 LEGAL_WARRANTY_DAYS = 90
 PREFERENCE_DAYS = 7
 FACTORY_WARRANTY = "de 6 meses a 2 anos, conforme o certificado que acompanha o produto"
+TEAM_REPLY_BUSINESS_HOURS = 24
 
 MAX_VERIFICATION_ATTEMPTS = 3
 SEARCH_ROW_CAP = 5
@@ -106,6 +107,17 @@ DESTINATION_OTHER = "other"
 SortOrder = Literal[SORT_PRICE_ASC, SORT_PRICE_DESC, SORT_NAME]
 PaymentMethod = Literal[PAYMENT_PIX, PAYMENT_DEBIT, PAYMENT_CREDIT, PAYMENT_BOLETO, PAYMENT_SPLIT]
 Destination = Literal[DESTINATION_CITY, DESTINATION_OTHER]
+HandoffReason = Literal[
+    "purchase",
+    "cancel",
+    "address_change",
+    "return_request",
+    "complaint",
+    "out_of_city_freight",
+    "discount_request",
+    "other",
+]
+HANDOFF_REASON_CAP = 40
 
 VERIFICATION_FAILED = "Não encontrei um pedido com esses dados."
 VERIFICATION_LOCKED = "Não consegui confirmar o pedido. Vou chamar alguém da equipe."

@@ -27,12 +27,13 @@ from music_store_agent.constants import (
     SORT_PRICE_ASC,
     TOOL_RETRIES,
     Destination,
+    HandoffReason,
     PaymentMethod,
     SortOrder,
 )
 from music_store_agent.deps import Deps
 from music_store_agent.guard import AgentReply, grounding_gap
-from music_store_agent.handoff import write_handoff
+from music_store_agent.handoff import reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
 from music_store_agent.orders import explain_after_sales, read_order, verify
 from music_store_agent.policies import PolicySection, load_manual, sections_text
@@ -208,13 +209,20 @@ def get_order(ctx: RunContext[Deps], order_id: int) -> str:
     return read_order(deps.identity, deps.conn, order_id, deps.clock.today(), deps.ledger)
 
 
-def explain_order_policy(ctx: RunContext[Deps], order_id: int) -> str:
-    """State return and warranty rules for one confirmed order, then hand off. Does not approve."""
+def explain_order_policy(ctx: RunContext[Deps], order_id: int, open_request: bool = False) -> str:
+    """State exchange, return, and warranty rules for one confirmed order. Never approves.
+
+    Args:
+        order_id: A confirmed order of this customer.
+        open_request: True only when the customer asks to start an exchange, a return,
+            or a warranty claim. A question about the rules is False.
+    """
     deps = ctx.deps
     result = explain_after_sales(deps.identity, deps.conn, order_id, deps.clock.today())
-    if result.open_to_request:
-        _handoff(ctx, "return_request", f"Pedido {order_id}: regra explicada, sem aprovação.")
-    return result.text
+    if not (open_request and result.open_to_request):
+        return result.text
+    _handoff(ctx, "return_request", f"Pedido {order_id}: cliente pediu troca ou devolução.")
+    return f"{result.text}\nRegistrei o pedido para a equipe. {reply_window(deps.clock.now())}"
 
 
 def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:
@@ -225,10 +233,15 @@ def check_hours(ctx: RunContext[Deps], day: str | None = None) -> str:
     return hours_answer(ctx.deps.clock.now(), asked)
 
 
-def handoff_to_human(ctx: RunContext[Deps], reason: str, summary: str) -> str:
-    """Record a handoff when the store would have to commit to an order or exception."""
+def handoff_to_human(ctx: RunContext[Deps], reason: HandoffReason, summary: str) -> str:
+    """Record a handoff when the store would have to commit to an order or an exception.
+
+    Args:
+        reason: The kind of request.
+        summary: One line for the team, without email or phone.
+    """
     _handoff(ctx, reason, summary)
-    return "Registrei o encaminhamento para a equipe. Alguém retoma o contato."
+    return f"Registrei o encaminhamento para a equipe. {reply_window(ctx.deps.clock.now())}"
 
 
 def _handoff(ctx: RunContext[Deps], reason: str, summary: str) -> None:

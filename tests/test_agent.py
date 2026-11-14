@@ -178,3 +178,25 @@ def test_free_text_destination_is_rejected_by_the_tool_schema(tmp_path) -> None:
     assert "campo_grande" in _tool_text(result.all_messages())
     assert deps.ledger.by_product == {}
 
+
+def _after_sales(open_request: bool):
+    def respond(messages, _info):
+        done = _tool_text(messages)
+        if "confirmado" not in done:
+            args = {"order_id": 7, "email": "leticia.rocha@jmail.com"}
+            return ModelResponse(parts=[ToolCallPart(tool_name="verify_customer", args=args)])
+        if "Não aprovo" not in done:
+            args = {"order_id": 7, "open_request": open_request}
+            return ModelResponse(parts=[ToolCallPart(tool_name="explain_after_sales", args=args)])
+        return _final("Expliquei as regras.", [])
+
+    return respond
+
+
+def test_a_rules_question_writes_no_handoff_and_a_request_does(tmp_path) -> None:
+    question = _deps(tmp_path / "question")
+    asyncio.run(build_agent(FunctionModel(_after_sales(False))).run("regras?", deps=question))
+    assert not question.paths.handoff.exists()
+    request = _deps(tmp_path / "request")
+    asyncio.run(build_agent(FunctionModel(_after_sales(True))).run("quero trocar", deps=request))
+    assert "return_request" in request.paths.handoff.read_text(encoding="utf-8")
