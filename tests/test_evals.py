@@ -13,7 +13,7 @@ from pydantic_ai.models.function import FunctionModel
 import evals.run as run_module
 from evals.run import _case, _one_pass, _report, main
 from evals.score import score_case
-from music_store_agent.agent import model_chain
+from music_store_agent.failover import model_chain
 from music_store_agent.quality import render
 
 ROOT = Path(__file__).resolve().parents[1]

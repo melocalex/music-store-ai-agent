@@ -5,14 +5,7 @@ import os
 from decimal import Decimal
 
 from pydantic_ai import Agent, ModelRetry, RunContext
-from pydantic_ai.exceptions import (
-    ModelConnectionError,
-    ModelRequestTimeout,
-    ModelServerError,
-    ModelUnavailableError,
-)
 from pydantic_ai.models import Model, parse_model_id
-from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.providers import infer_provider_class
 from pydantic_ai.settings import ModelSettings
 
@@ -38,7 +31,6 @@ from music_store_agent.constants import (
     MODEL_TIMEOUT_ENV,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
-    PROVIDER_SDK_RETRIES,
     RETRY_PRICE,
     SORT_PRICE_ASC,
     TOOL_RETRIES,
@@ -49,6 +41,7 @@ from music_store_agent.constants import (
     SortOrder,
 )
 from music_store_agent.deps import Deps
+from music_store_agent.failover import model_chain, request_settings
 from music_store_agent.guard import AgentReply, grounding_gap
 from music_store_agent.handoff import reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
@@ -59,16 +52,6 @@ from music_store_agent.quotes import quote_text
 from music_store_agent.textutil import amounts_in_text, parse_amount, percents_in_text
 
 _MANUAL = load_manual()
-
-# Provider outages and a request past its timeout move that request to the fallback. A rate
-# limit, a quota, or a rejected request (bad key, unknown model) does not: the fallback would
-# fail the same way or hide the cause.
-PROVIDER_OUTAGES = (
-    ModelUnavailableError,
-    ModelServerError,
-    ModelConnectionError,
-    ModelRequestTimeout,
-)
 
 
 def model_id(raw: str | None = None) -> str:
@@ -107,29 +90,20 @@ def request_timeout(raw: str | None = None) -> float:
     return seconds
 
 
-def request_settings(seconds: float) -> ModelSettings:
-    """Each model gets one attempt under its own deadline. The fallback is the only retry."""
-    return ModelSettings(request_timeout=seconds, max_retries=PROVIDER_SDK_RETRIES)
-
-
-def model_chain(primary: Model | str, fallback: Model | str) -> FallbackModel:
-    """The primary answers. An outage or a timeout moves that request to the fallback."""
-    return FallbackModel(primary, fallback, fallback_on=PROVIDER_OUTAGES)
-
-
 def build_agent(
     model: Model | str | None = None,
     settings: ModelSettings | None = None,
 ) -> Agent[Deps, AgentReply]:
     """A Model instance runs as given, with only the settings passed in.
 
-    An id, or nothing, runs that primary with the fallback behind it, under the request timeout.
+    An id, or nothing, runs that primary with the fallback behind it, each request under the
+    hard deadline and the HTTP timeout.
     """
     if isinstance(model, Model):
         chosen: Model = model
     else:
         primary, fallback, seconds = model_id(model), fallback_model_id(), request_timeout()
-        chosen = model_chain(primary, fallback)
+        chosen = model_chain(primary, fallback, seconds)
         settings = settings or request_settings(seconds)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,

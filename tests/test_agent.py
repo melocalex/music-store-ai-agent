@@ -38,6 +38,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
+from music_store_agent.failover import DeadlineModel
 from music_store_agent.run import run_turn
 
 PINNED = date(2026, 3, 23)
@@ -68,8 +69,12 @@ def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
     chain = agent.model
     assert isinstance(chain, FallbackModel)
     assert [model.model_id for model in chain.models] == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL]
+    for model in chain.models:
+        assert isinstance(model, DeadlineModel)
+        assert isinstance(model.wrapped, GoogleModel)
+        assert model.seconds == DEFAULT_REQUEST_TIMEOUT_SECONDS
     assert agent.model_settings == {
-        "request_timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        "timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
         "max_retries": PROVIDER_SDK_RETRIES,
     }
 
