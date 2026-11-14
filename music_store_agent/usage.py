@@ -1,22 +1,30 @@
-"""Daily turn counter. The quota day follows the real local date, not the pinned clock."""
+"""Daily turn counter. The quota day follows the real local date, not the pinned clock.
+
+This file and the handoff log are the only local writes. A lock keeps two Streamlit
+sessions from reading the same count, and os.replace makes each write atomic.
+"""
 
 import json
+import os
+import threading
 from datetime import date
 from pathlib import Path
 
+_LOCK = threading.Lock()
+
 
 def reserve(path: Path, day: date, limit: int) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    current = _read(path)
-    if current.get("day") != day.isoformat():
-        current = {"day": day.isoformat(), "count": 0}
-    count = int(current["count"])
-    if count >= limit:
+    with _LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        current = _read(path)
+        if current.get("day") != day.isoformat():
+            current = {"day": day.isoformat(), "count": 0}
+        count = int(str(current["count"]))
+        if count >= limit:
+            return False
+        current["count"] = count + 1
         _write(path, current)
-        return False
-    current["count"] = count + 1
-    _write(path, current)
-    return True
+        return True
 
 
 def _read(path: Path) -> dict[str, object]:
@@ -32,4 +40,6 @@ def _read(path: Path) -> dict[str, object]:
 
 
 def _write(path: Path, payload: dict[str, object]) -> None:
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    scratch = path.with_suffix(path.suffix + ".tmp")
+    scratch.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(scratch, path)
