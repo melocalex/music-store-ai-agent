@@ -13,8 +13,8 @@ from decimal import Decimal
 from typing import Any
 
 from evals.stamp import reference_day
-from music_store_agent.constants import SAFE_PRICE_MESSAGE
 from music_store_agent.hours import parse_asked_day
+from music_store_agent.language import is_safe_price_reply
 from music_store_agent.textutil import amounts_in_text, code_tokens, fold, parse_money_token
 
 
@@ -32,7 +32,7 @@ def score_case(case: dict[str, Any], transcript: list[dict[str, Any]]) -> list[s
 def _turn(expect: dict[str, Any], actual: dict[str, Any]) -> list[str]:
     reply = str(actual.get("reply", ""))
     problems: list[str] = []
-    if reply.startswith(SAFE_PRICE_MESSAGE) and not expect.get("fallback", False):
+    if is_safe_price_reply(reply) and not expect.get("fallback", False):
         problems.append("fell back to the price-check message")
     problems.extend(_tools(expect.get("tools", []), actual.get("calls", [])))
     problems.extend(_tool_text(expect.get("tool_text", {}), actual.get("returns", [])))

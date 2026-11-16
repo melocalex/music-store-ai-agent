@@ -40,6 +40,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import Deps, make_deps
+from music_store_agent.language import say
 from music_store_agent.run import log_answering_model, provider_message, run_agent
 from music_store_agent.textutil import amounts_in_text
 
@@ -169,7 +170,7 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
         latency.append((time.perf_counter() - started) * 1000)
         if result is None:
             fired = deps.counters.validator_firings > firings
-            reply = SAFE_PRICE_MESSAGE if fired else TURN_ERROR_MESSAGE
+            reply = say(SAFE_PRICE_MESSAGE if fired else TURN_ERROR_MESSAGE, turn["prompt"])
             transcript.append({"reply": reply, "calls": [], "returns": []})
             requests.append(0)
             continue

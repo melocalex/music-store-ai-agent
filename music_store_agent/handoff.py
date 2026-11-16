@@ -44,8 +44,15 @@ def write_handoff(path: Path, when: datetime, case: HandoffCase) -> None:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def follow_up(order_id: int | None, protocol: str) -> str:
+def follow_up(order_id: int | None, protocol: str, english: bool = False) -> str:
     """How the team gets back to this person."""
+    if english:
+        if order_id is not None:
+            return f"The team will contact you through the contact details of order {order_id}."
+        return (
+            f"To have the team reach you, message us on WhatsApp {WHATSAPP_PHONE} "
+            f"and give protocol {protocol}."
+        )
     if order_id is not None:
         return f"A equipe fala com você pelo contato do pedido {order_id}."
     return (

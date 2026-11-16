@@ -19,6 +19,7 @@ from music_store_agent.ledger import (
 from music_store_agent.textutil import (
     amount_spans,
     amounts_in_text,
+    budget_caps,
     code_tokens,
     fold,
     parse_amount,
@@ -49,6 +50,16 @@ _KIND_WORDS: dict[RuleKind, tuple[str, ...]] = {
         "budget",
         "up to",
         "under",
+        "below",
+        "within",
+        "dentro",
+        "maximo",
+        "ou menos",
+        "or less",
+        "cabem",
+        "cabe",
+        "fit",
+        "fits",
     ),
     RULE: ("regra", "manual", "politica", "rule", "policy"),
 }
@@ -91,11 +102,20 @@ def grounding_gap(
     quotes: list[PriceQuote],
     ledger: Ledger,
     catalog: dict[int, str] | None = None,
+    caps: frozenset[Decimal] | set[Decimal] = frozenset(),
 ) -> GroundingGap:
-    """`catalog` maps product ids to names, so a product named without a lookup still counts."""
+    """`catalog` maps product ids to names, so a product named without a lookup still counts.
+
+    `caps` are the upper bounds the customer's own message states, such as "até R$ 1.500". The
+    reply may repeat one only as a bound, in a sentence that says so. It is the customer's limit,
+    not a price the store asserts, so it needs no quote.
+    """
     amounts = amounts_in_text(message)
     quoted = [quote.amount for quote in quotes]
-    missing = [str(amount) for amount in sorted(amounts) if amount not in quoted]
+    echoed = _echoed_caps(message, set(caps))
+    missing = [
+        str(amount) for amount in sorted(amounts) if amount not in quoted and amount not in echoed
+    ]
     bad = [_label(q.product_id, q.amount) for q in quotes if not _quote_ok(q, ledger)]
     percents = [str(value) for value in sorted(percents_in_text(message) - ledger.percents)]
     every = amounts | set(quoted)
@@ -107,6 +127,19 @@ def grounding_gap(
         tuple(percents),
         tuple(unknown),
     )
+
+
+def _echoed_caps(message: str, caps: set[Decimal]) -> set[Decimal]:
+    """Customer caps that the reply writes only as a bound, never as a bare amount."""
+    if not caps:
+        return set()
+    bounded: set[Decimal] = set()
+    loose: set[Decimal] = set()
+    for sentence in _BOUNDARY.split(message):
+        said = budget_caps(sentence) & caps
+        bounded |= said
+        loose |= amounts_in_text(sentence) - said
+    return bounded - loose
 
 
 def _label(product_id: int | None, amount: Decimal) -> str:

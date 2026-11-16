@@ -375,3 +375,57 @@ def code_tokens(text: str) -> set[str]:
         if left.isdigit() and re.fullmatch(r"[a-z]+", right):
             found.add(left + right)
     return found
+
+
+# A customer's budget: a bound word, then the amount ("até R$ 1.500", "under 1500", "mil e
+# quinhentos"), or the amount, then a bound ("R$ 1.500 ou menos"). Read on folded text.
+_BOUND_WORD = (
+    r"ate|abaixo|menos|no maximo|maximo|max|maximum|teto|limite|orcamento|budget|under|below|"
+    r"up to|less than|at most|no more than|within|dentro|cabem?|fit|fits|cap|ceiling"
+)
+_CAP_FILLER = (
+    r"(?:(?:r\$|reais|real|brl|de|do|da|dos|das|of|the|a|um|uma|your|seu|seus|sua|suas|about|"
+    r"around|cerca|uns|valor|is|e|in|nos|nas|no|na|em|than|to)\s*[:=]?\s*)*"
+)
+_CAP_BEFORE = re.compile(rf"\b(?:{_BOUND_WORD})\b\s*[:=]?\s*{_CAP_FILLER}", re.IGNORECASE)
+_CAP_NUMBER = re.compile(rf"(?P<n>{_NUMBER})(?:\s*(?P<scale>mil|k)\b)?", re.IGNORECASE)
+_CAP_AFTER = re.compile(
+    rf"(?<![\d.,])(?P<n>{_NUMBER})(?:\s*(?P<scale>mil|k)\b)?\s*(?:reais|real|brl)?\s*"
+    r"(?:ou menos|ou ate|or less|or under|or below|no maximo|max|maximo|de teto|de limite|"
+    r"de orcamento|budget|limit|limite|ceiling|cap|teto|orcamento)\b",
+    re.IGNORECASE,
+)
+
+
+def budget_caps(text: str) -> set[Decimal]:
+    """Amounts a message states as an upper bound. A bare price, like "vi por R$ 10,00", is not."""
+    folded = fold(text)
+    caps: set[Decimal] = set()
+    for match in _CAP_BEFORE.finditer(folded):
+        cap = _cap_at(folded, match.end())
+        if cap is not None:
+            caps.add(cap)
+    for match in _CAP_AFTER.finditer(folded):
+        caps.add(_scaled(match.group("n"), match.group("scale")))
+    caps.discard(Decimal(0).quantize(CENT))
+    return caps
+
+
+def _cap_at(folded: str, start: int) -> Decimal | None:
+    number = _CAP_NUMBER.match(folded, start)
+    if number is not None:
+        return _scaled(number.group("n"), number.group("scale"))
+    words: list[str] = []
+    for token in re.findall(r"[a-z]+", folded[start : start + 80]):
+        if token not in _NUMBER_WORDS:
+            break
+        words.append(token)
+    while words and words[-1] == "e":
+        words.pop()
+    value = parse_pt_number(words) if words else None
+    return Decimal(value).quantize(CENT) if value else None
+
+
+def _scaled(token: str, scale: str | None) -> Decimal:
+    value = _number_value(token)
+    return (value * _THOUSAND).quantize(CENT) if scale else value

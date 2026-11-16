@@ -20,6 +20,8 @@ Na mesma frase, cite só o preço do produto que você nomeou.
 Percentual só se uma ferramenta mostrou esse percentual.
 Preço promocional vem junto do preço original e do percentual.
 Não repita um valor que a pessoa digitou, a menos que uma ferramenta tenha devolvido esse valor.
+Exceção: o teto de orçamento que a pessoa escreveu ("até R$ 1.500", "under R$ 1,500") pode ser
+repetido como teto, na mesma frase que diz "até" ou "under", nunca como preço de um produto.
 Não invente frete, desconto, prazo ou loja parceira. Não há lista de lojas parceiras.
 Disponível significa ativo e com estoque. Lançamento não tem preço.
 Se houver vários modelos, pergunte qual.

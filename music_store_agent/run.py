@@ -33,6 +33,7 @@ from music_store_agent.failover import (
 )
 from music_store_agent.guard import AgentReply, PriceQuote
 from music_store_agent.handoff import HandoffCase, follow_up, write_handoff
+from music_store_agent.language import is_english, say
 
 _log = logging.getLogger(__name__)
 
@@ -80,26 +81,26 @@ async def run_turn(
     history: list[ModelMessage],
 ) -> Turn:
     if len(message) > MAX_INPUT_CHARS:
-        return Turn(INPUT_TOO_LONG_MESSAGE, (), tuple(history), limited=True)
+        return Turn(say(INPUT_TOO_LONG_MESSAGE, message), (), tuple(history), limited=True)
     firings = deps.counters.validator_firings
     try:
         result = await run_agent(agent, deps, message, history)
     except ModelAPIError as error:
         _log.warning("provider error: %s", error_label(error))
-        return _unanswered(history, provider_message(error))
+        return _unanswered(history, say(provider_message(error), message))
     except (FallbackExceptionGroup, RunTimedOut) as error:
         # Every model failed, or the turn ran past its budget.
         _log.warning("no model answered: %s", error_label(error))
-        return _unanswered(history, group_message(error))
+        return _unanswered(history, say(group_message(error), message))
     except UnexpectedModelBehavior as error:
         if deps.counters.validator_firings > firings:
             _log.warning("price check gave up: %s", error_label(error))
-            return _safe_price(deps, history)
+            return _safe_price(deps, history, message)
         _log.warning("turn failed: %s", error_label(error))
-        return _unanswered(history, TURN_ERROR_MESSAGE)
+        return _unanswered(history, say(TURN_ERROR_MESSAGE, message))
     except Exception as error:
         _log.warning("turn crashed: %s", error_label(error))
-        return _unanswered(history, TURN_ERROR_MESSAGE)
+        return _unanswered(history, say(TURN_ERROR_MESSAGE, message))
     reply = result.output
     fresh = tuple(result.new_messages())
     log_answering_model(agent, fresh)
@@ -200,7 +201,7 @@ def error_label(error: BaseException) -> str:
     return " ".join(parts)
 
 
-def _safe_price(deps: Deps, history: list[ModelMessage]) -> Turn:
+def _safe_price(deps: Deps, history: list[ModelMessage], customer_message: str) -> Turn:
     identity = deps.identity
     case = HandoffCase(
         "price_check",
@@ -210,5 +211,7 @@ def _safe_price(deps: Deps, history: list[ModelMessage]) -> Turn:
         identity.verified_order_id,
     )
     write_handoff(deps.paths.handoff, deps.clock.now(), case)
-    message = f"{SAFE_PRICE_MESSAGE} {follow_up(identity.verified_order_id, deps.protocol)}"
+    english = is_english(customer_message)
+    follow = follow_up(identity.verified_order_id, deps.protocol, english)
+    message = f"{say(SAFE_PRICE_MESSAGE, customer_message)} {follow}"
     return Turn(message, (), tuple(history), limited=True)

@@ -63,7 +63,12 @@ from music_store_agent.orders import explain_after_sales, read_order, verify
 from music_store_agent.policies import PolicySection, load_manual, sections_text
 from music_store_agent.prompts import INSTRUCTIONS
 from music_store_agent.quotes import quote_text
-from music_store_agent.textutil import amounts_in_text, parse_amount, percents_in_text
+from music_store_agent.textutil import (
+    amounts_in_text,
+    budget_caps,
+    parse_amount,
+    percents_in_text,
+)
 
 _MANUAL = load_manual()
 _AMOUNT_FIELD = re.compile(r"amount=(\d+(?:\.\d{1,2})?)")
@@ -244,7 +249,12 @@ def reply_language(ctx: RunContext[Deps]) -> str:
 
 def validate_reply(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     names = {product.product_id: product.name for product in load_catalog(ctx.deps.conn)}
-    gap = grounding_gap(reply.message, reply.quotes, ctx.deps.ledger, names)
+    # The customer's own upper bound is theirs to state and ours to repeat as a bound. Only the
+    # current message counts, and only an amount written as a limit, never one that "I saw".
+    caps = budget_caps(str(ctx.prompt or ""))
+    for cap in caps:
+        ctx.deps.ledger.add_budget(cap)
+    gap = grounding_gap(reply.message, reply.quotes, ctx.deps.ledger, names, caps)
     if gap.ok:
         return reply
     counters = ctx.deps.counters

@@ -16,6 +16,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.deps import Deps
 from music_store_agent.guard import AgentReply
+from music_store_agent.language import say
 from music_store_agent.run import Turn, error_label, run_turn
 
 # The turn has its own budget. This one only catches a worker that never came back.
@@ -40,14 +41,14 @@ class TurnJob:
         return not self.future.done() and time.monotonic() - self.started > JOB_DEADLINE_SECONDS
 
     def result(self) -> Turn:
-        """The turn, or a fixed Portuguese message if the worker failed or never answered."""
+        """The turn, or a fixed message in the customer's language if the worker failed."""
         if not self.future.done():
             _log.warning("turn worker did not answer in %.0f seconds", JOB_DEADLINE_SECONDS)
-            return Turn(PROVIDER_ERROR_MESSAGE, (), self.history, limited=True)
+            return Turn(say(PROVIDER_ERROR_MESSAGE, self.prompt), (), self.history, limited=True)
         error = self.future.exception()
         if error is not None:
             _log.warning("turn worker failed: %s", error_label(error))
-            return Turn(TURN_ERROR_MESSAGE, (), self.history, limited=True)
+            return Turn(say(TURN_ERROR_MESSAGE, self.prompt), (), self.history, limited=True)
         return self.future.result()
 
 
@@ -73,4 +74,4 @@ def _work(
         return asyncio.run(run_turn(agent, deps, prompt, history))
     except Exception as error:
         _log.warning("turn crashed: %s", error_label(error))
-        return Turn(TURN_ERROR_MESSAGE, (), tuple(history), limited=True)
+        return Turn(say(TURN_ERROR_MESSAGE, prompt), (), tuple(history), limited=True)
