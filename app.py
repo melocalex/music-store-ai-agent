@@ -1,7 +1,8 @@
 """Hosted chat. Visitors never paste a key. The host sets GOOGLE_API_KEY."""
 
-import asyncio
+import logging
 import os
+import sys
 
 import streamlit as st
 from pydantic_ai.messages import ModelMessage
@@ -16,10 +17,14 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import make_deps
-from music_store_agent.run import run_turn
+from music_store_agent.jobs import TurnJob, start_turn
 from music_store_agent.textutil import mask_pii
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
+# Streamlit Cloud shows stderr in its logs. Messages carry error types, never keys or bodies.
+logging.basicConfig(
+    stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+)
 
 LIVE_NOTE = "A cópia hospedada dorme depois de um tempo sem uso e acorda na próxima visita."
 DISCLAIMER = "Protótipo. Catálogo, clientes e pedidos são fictícios."
@@ -72,10 +77,13 @@ def main() -> None:
         st.warning("O responsável pelo site ainda não configurou a chave do modelo.")
         return
     _history()
-    typed = st.chat_input("Escreva sua pergunta", max_chars=MAX_INPUT_CHARS)
+    busy = st.session_state.get("job") is not None
+    typed = st.chat_input("Escreva sua pergunta", max_chars=MAX_INPUT_CHARS, disabled=busy)
     prompt = typed or st.session_state.pop("pending", None)
-    if prompt:
-        _ask(prompt)
+    if prompt and not busy:
+        _submit(prompt)
+    if st.session_state.get("job") is not None:
+        _pending()
     st.caption(LIVE_NOTE)
 
 
@@ -89,6 +97,7 @@ def _ensure_session() -> None:
     st.session_state.history = []
     st.session_state.turns = 0
     st.session_state.chat = []
+    st.session_state.job = None
 
 
 def _sidebar() -> None:
@@ -114,30 +123,45 @@ def _tools(item: dict[str, object]) -> None:
             st.text(quote)
 
 
-def _ask(prompt: str) -> None:
-    with st.chat_message("user"):
-        st.markdown(safe_markdown(prompt))
-    with st.chat_message("assistant"), st.spinner(WORKING):
-        turn = asyncio.run(
-            run_turn(
-                st.session_state.agent,
-                st.session_state.deps,
-                prompt,
-                list(st.session_state.history),
-                st.session_state.turns,
-            )
-        )
+def _submit(prompt: str) -> None:
+    """Keep the question first, then run the turn off the script. A rerun cannot lose either."""
+    st.session_state.chat.append({"role": "user", "text": prompt})
+    st.session_state.job = start_turn(
+        st.session_state.agent,
+        st.session_state.deps,
+        prompt,
+        list(st.session_state.history),
+        st.session_state.turns,
+    )
+    st.rerun()
+
+
+@st.fragment(run_every=1.0)
+def _pending() -> None:
+    """Show the question's answer when the turn ends. Polling survives a reconnect."""
+    job: TurnJob | None = st.session_state.get("job")
+    if job is None:
+        return
+    if not job.finished():
+        with st.chat_message("assistant"):
+            st.markdown(f"_{WORKING}_")
+        return
+    _finish(job)
+    st.rerun()
+
+
+def _finish(job: TurnJob) -> None:
+    turn = job.result()
     st.session_state.history = list(turn.history)
     st.session_state.turns += 1
     quotes = [f"valor {quote.product_id} {quote.amount}" for quote in turn.quotes]
-    st.session_state.chat.append({"role": "user", "text": prompt})
     st.session_state.chat.append({
         "role": "assistant",
         "text": turn.message,
         "tools": tool_lines(list(turn.new_messages)),
         "quotes": quotes,
     })
-    st.rerun()
+    st.session_state.job = None
 
 
 if __name__ == "__main__":
