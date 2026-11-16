@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="Aria, virtual assistant for Empório da Música" width="100%"></p>
 <p align="center">
   <b>Ask about an instrument, a price, an order, or a store rule. Aria answers from the catalog, the order book, and the policy manual, and a price no tool returned never reaches the customer.</b><br>
-  <a href="LIVE_DEMO_URL"><b>Live demo</b></a> · <a href="docs/setup.md">Setup</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/guardrails.md">Guardrails</a> · <a href="docs/data-quality.md">Data quality</a> · <a href="docs/evals.md">Evals</a>
+  <a href="https://aria-music-store.streamlit.app/"><b>Live demo</b></a> · <a href="docs/setup.md">Setup</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/guardrails.md">Guardrails</a> · <a href="docs/data-quality.md">Data quality</a> · <a href="docs/evals.md">Evals</a>
 </p>
 <p align="center">
   <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776AB"></a>
@@ -13,7 +13,7 @@
 </p>
 
 > [!NOTE]
-> **Live demo:** the link above points to `LIVE_DEMO_URL`, a placeholder until the hosted app is deployed. The hosted demo keeps the model key on the server, so visitors only type their question. The store, catalog, customers, and orders are fictional.
+> **Live demo:** [aria-music-store.streamlit.app](https://aria-music-store.streamlit.app/). The model key stays on the server, so visitors only type their question. The page sleeps after a while without visits and takes a few seconds to wake. The store, catalog, customers, and orders are fictional.
 
 ## 🚀 Run it in 3 steps
 
