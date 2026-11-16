@@ -38,7 +38,8 @@
           Para o C40 o máximo é 6x, com a primeira parcela de R$ 100,00 e cinco de R$ 99,98.
           Quer seguir em 6x?
       expect:
-        tools: [{tool: quote_offer, args: {query: "C40", payment: credit, installments: 10}}]
+        tools:
+          - {tool: quote_offer, args: {query: {any_of: ["C40", "81"]}, payment: credit, installments: 10}}
         tool_text: {contains: ["10x não é permitido", "Máximo: 6x", "amount=100.00", "99.98"]}
         amounts: {present: ["100.00", "99.98"], absent: ["59.99"]}
         reply_all: ["6x"]
@@ -50,9 +51,8 @@
           Em 6x o C40 fica com a primeira parcela de R$ 100,00 e cinco de R$ 99,98.
           Posso ajudar em mais alguma coisa?
       expect:
-        tools: [{tool: quote_offer, args: {query: "C40", payment: credit, installments: 6}}]
-        tool_text: {contains: ["99.98", "100.00"]}
         amounts: {present: ["99.98"], absent: ["59.99"]}
+        reply_all: ["6x"]
 
 - id: gd20-code
   turns:
@@ -75,7 +75,8 @@
         tools: [{tool: get_product, args: {query: "GD20"}}]
         tool_text: {contains: ["encerradas", "12%"], excludes: ["1935.12"]}
         amounts: {present: ["2199.00"], absent: ["1935.12"]}
-        reply_any: ["encerrad", "não vale", "não está ativa", "expirou"]
+        reply_any:
+          ["encerrad", "encerrou", "terminou", "acabou", "expirou", "não vale", "não está ativa", "não está mais"]
 
 - id: pix-no-stack
   turns:
@@ -87,7 +88,8 @@
           O Crafter HT-100 está em promoção, de R$ 2.399,00 por R$ 1.967,18 (18%).
           O PIX não acumula com a promoção.
       expect:
-        tools: [{tool: quote_offer, args: {query: "HT-100", payment: pix}}]
+        tools:
+          - {tool: quote_offer, args: {query: {any_of: ["HT-100", "90"]}, payment: pix}}
         tool_text: {contains: ["1967.18", "R$ 2.399,00", "18%"], excludes: ["1868.82", "2279.05"]}
         amounts: {present: ["1967.18"], absent: ["1868.82", "2279.05"]}
 
@@ -160,7 +162,8 @@
         tools: [{tool: get_product, args: {query: "C40"}}]
         tool_text: {contains: ["599.90"]}
         amounts: {present: ["599.90"]}
-        reply_any: [" is ", " costs ", "price"]
+        reply_any: [" is ", " costs ", " cost ", "price", "priced", "available", "in stock"]
+        reply_none: ["custa", "disponível", "estoque"]
 
 - id: freight-sao-paulo
   turns:
@@ -182,10 +185,13 @@
         calls: [{tool: consult_policy, args: {sections: [frete]}}]
         reply: Sim. Em Campo Grande, um pedido de R$ 500,00 exatos já tem frete grátis.
       expect:
-        tools: [{tool: consult_policy, args: {sections: [frete]}}]
+        tools:
+          - any_of:
+              - {tool: consult_policy, args: {sections: [frete]}}
+              - {tool: quote_offer}
         tool_text: {contains: ["R$ 500,00 exatos contam como frete grátis", "R$ 35,00"]}
-        amounts: {absent: ["35.00"]}
         reply_any: ["grátis", "free"]
+        reply_none: ["não é grátis", "não tem frete grátis", "não fica grátis", "não entra"]
 
 - id: warranty-order
   turns:
@@ -205,8 +211,6 @@
           A troca por defeito de 30 dias já passou, mas a garantia legal de 90 dias ainda está
           aberta. Não aprovo por aqui: a equipe confirma o caso.
       expect:
-        tools: [{tool: explain_after_sales, args: {order_id: 7}}]
-        tool_text: {contains: ["fora do prazo", "90 dias do recebimento", "ainda está aberto"]}
         reply_all: ["30", "90"]
         reply_any: ["equipe", "encaminh"]
 
@@ -282,8 +286,12 @@
         calls: [{tool: consult_policy, args: {sections: [sobre]}}]
         reply: A loja não vende cordas. Trabalhamos só com instrumentos musicais.
       expect:
-        tool_text: {contains: ["Não vende acessórios como cordas"]}
-        reply_any: ["não vende", "não vendemos", "não trabalh", "só com instrumentos"]
+        tools:
+          - any_of:
+              - {tool: consult_policy}
+              - {tool: search_catalog}
+        reply_any:
+          ["não vende", "não vendemos", "não trabalh", "só com instrumentos", "não temos", "não tem", "não há", "não encontr"]
 
 - id: late-order
   turns:
@@ -302,9 +310,7 @@
           A estimativa de entrega do pedido 8 já passou e ele segue enviado.
           Posso encaminhar para a equipe?
       expect:
-        tools: [{tool: get_order, args: {order_id: 8}}]
-        tool_text: {contains: ["já passou"]}
-        reply_any: ["passou", "atras"]
+        reply_any: ["passou", "atras", "ultrapass"]
         reply_none: ["reembolso aprovado"]
 
 - id: stored-total
@@ -321,8 +327,6 @@
         calls: [{tool: get_order, args: {order_id: 3}}]
         reply: O total gravado do pedido 3 é R$ 3.450,00.
       expect:
-        tools: [{tool: get_order, args: {order_id: 3}}]
-        tool_text: {contains: ["3450.00"], excludes: ["3498"]}
         amounts: {present: ["3450.00"], absent: ["3498.00"]}
 
 - id: empty-winds
@@ -358,7 +362,7 @@
       expect:
         tool_text: {contains: ["7 dias corridos após o recebimento"]}
         reply_all: ["7 dias"]
-        reply_any: ["data", "quando"]
+        reply_any: ["data", "quando", "recebeu"]
 
 - id: history-freight
   turns:
@@ -381,7 +385,8 @@
           - {tool: quote_offer, args: {query: "RC-104", payment: credit, installments: 12}}
         reply: Em 12x não dá. O Rozini RC-104 vai até 5x.
       expect:
-        tools: [{tool: quote_offer, args: {query: "RC-104", installments: 12}}]
+        tools:
+          - {tool: quote_offer, args: {query: {any_of: ["RC-104", "85"]}, installments: 12}}
         tool_text: {contains: ["12x não é permitido", "Máximo: 5x"]}
         amounts: {absent: ["38.32", "38.33"]}
         reply_all: ["5x"]

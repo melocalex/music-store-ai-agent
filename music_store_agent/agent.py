@@ -1,9 +1,11 @@
 """One assistant, with an explicit tool list."""
 
+import functools
 import math
 import os
 import re
 from decimal import Decimal
+from typing import Any
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage, ToolReturnPart
@@ -40,6 +42,7 @@ from music_store_agent.constants import (
     OPENROUTER_APP_URL,
     OPENROUTER_KEY_ENV,
     OPENROUTER_MODEL_ENV,
+    OPENROUTER_SETTINGS,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
     RETRY_PRICE,
@@ -91,17 +94,23 @@ def openrouter_configured() -> bool:
     return bool(os.environ.get(OPENROUTER_KEY_ENV, "").strip())
 
 
-def _openrouter_model(name: str) -> Model:
+def _openrouter_model(name: str, http_client: Any = None) -> Model:
     """The OpenRouter model, sending the app's URL and title so the usage is attributed to it."""
-    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettings
     from pydantic_ai.providers.openrouter import OpenRouterProvider
 
     provider = OpenRouterProvider(
         api_key=os.environ[OPENROUTER_KEY_ENV].strip(),
         app_url=OPENROUTER_APP_URL,
         app_title=OPENROUTER_APP_TITLE,
+        http_client=http_client,
     )
-    return OpenRouterModel(name, provider=provider)
+    # Claude's reasoning blocks are signed against the request they came from. Sent back on a later
+    # request of the same turn (a tool round or a retry) they can be refused with an HTTP 400.
+    # Aria needs tools and a price check, not visible reasoning, so reasoning stays off.
+    return OpenRouterModel(
+        name, provider=provider, settings=OpenRouterModelSettings(**OPENROUTER_SETTINGS)
+    )
 
 
 def _gemini_id(raw: str | None, env: str, default: str) -> str:
@@ -143,6 +152,18 @@ def _env_seconds(raw: str | None, env: str, default: float) -> tuple[str, float]
         return text, math.nan
 
 
+def chain_ids(model: str | None = None) -> list[str]:
+    """The ids of the models `build_agent(model)` asks, in order, without building any of them."""
+    ids: list[str] = []
+    openrouter_first = model is None and openrouter_configured()
+    if openrouter_first:
+        ids.append(f"openrouter:{openrouter_model_name()}")
+    # With OpenRouter alone, no Gemini key is needed: the Gemini models join only with one.
+    if not (openrouter_first and not os.environ.get("GOOGLE_API_KEY", "").strip()):
+        ids += [model_id(model), fallback_model_id(), reserve_model_id()]
+    return ids
+
+
 def build_agent(
     model: Model | str | None = None,
     settings: ModelSettings | None = None,
@@ -157,18 +178,13 @@ def build_agent(
         chosen: Model = model
     else:
         seconds, window = request_timeout(), breaker_window()
+        ids = chain_ids(model)
         models: list[Model | str] = []
-        if model is None and openrouter_configured():
-            name = openrouter_model_name()
-            models.append(_openrouter_model(name))
-            ids = [f"openrouter:{name}"]
+        if ids[0].startswith("openrouter:"):
+            models.append(_openrouter_model(openrouter_model_name()))
+            models += ids[1:]
         else:
-            ids = []
-        # With OpenRouter alone, no Gemini key is needed: the Gemini models join only with one.
-        if not (models and not os.environ.get("GOOGLE_API_KEY", "").strip()):
-            gemini = [model_id(model), fallback_model_id(), reserve_model_id()]
-            models += gemini
-            ids += gemini
+            models += ids
         # Every model but the last has a breaker, shared by every agent this process builds.
         breakers = [shared_breaker(known, window) for known in ids[:-1]]
         chosen = model_stack(models, seconds, breakers)
@@ -188,17 +204,23 @@ def build_agent(
 
 
 def _register(agent: Agent[Deps, AgentReply]) -> None:
-    agent.tool(name="search_catalog")(search_products)
-    agent.tool(get_product)
-    agent.tool(quote_offer)
-    agent.tool(list_active_promotions)
-    agent.tool(consult_policy)
-    agent.tool(verify_customer)
-    agent.tool(get_order)
-    agent.tool(name="explain_after_sales")(explain_order_policy)
-    agent.tool(check_hours)
-    agent.tool(handoff_to_human)
+    # Every tool shares one SQLite connection, the ledger and the session state, and a sync tool
+    # runs in a worker thread. A model that asks for two tools in one response must not run them
+    # at the same time: with reasoning off, Claude does that often, and two threads on one
+    # connection returned rows with empty fields. `sequential` runs them one after the other.
+    tool = functools.partial(agent.tool, sequential=True)
+    tool(name="search_catalog")(search_products)
+    tool(get_product)
+    tool(quote_offer)
+    tool(list_active_promotions)
+    tool(consult_policy)
+    tool(verify_customer)
+    tool(get_order)
+    tool(name="explain_after_sales")(explain_order_policy)
+    tool(check_hours)
+    tool(handoff_to_human)
     agent.instructions(reference_day)
+    agent.instructions(reply_language)
     agent.output_validator(validate_reply)
 
 
@@ -208,6 +230,16 @@ def reference_day(ctx: RunContext[Deps]) -> str:
     now = clock.now()
     when = f"{weekday_name(now.date())}, {now.date().isoformat()} {now.strftime('%H:%M')}"
     return f"Data de referência: {when} ({clock.label}). Use só esta data."
+
+
+def reply_language(ctx: RunContext[Deps]) -> str:
+    """Quote the customer's latest message, so the reply language is read from it, not guessed."""
+    asked = " ".join(str(ctx.prompt or "").split())[:200]
+    return (
+        f'Mensagem atual da pessoa: "{asked}". '
+        "Escreva message no idioma dessa mensagem: inglês se ela escreveu em inglês, "
+        "português se escreveu em português."
+    )
 
 
 def validate_reply(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:

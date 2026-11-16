@@ -42,11 +42,17 @@ def _turn(expect: dict[str, Any], actual: dict[str, Any]) -> list[str]:
 
 
 def _tools(expected: list[dict[str, Any]], calls: list[dict[str, Any]]) -> list[str]:
+    """Each spec is one call that must happen, or `any_of`: several calls where one is enough."""
     problems = []
     for spec in expected:
-        if not any(_call_matches(spec, call) for call in calls):
+        options = spec.get("any_of", [spec])
+        if not any(_call_matches(option, call) for option in options for call in calls):
             seen = [f"{call.get('tool')} {_args(call.get('args'))}" for call in calls]
-            problems.append(f"no {spec['tool']} call with {spec.get('args', {})}; saw {seen}")
+            if len(options) == 1:
+                problems.append(f"no {spec['tool']} call with {spec.get('args', {})}; saw {seen}")
+            else:
+                wanted = " or ".join(f"{o['tool']} {o.get('args', {})}" for o in options)
+                problems.append(f"no call to {wanted}; saw {seen}")
     return problems
 
 
@@ -62,6 +68,9 @@ def _value_matches(expected: object, actual: object) -> bool:
     """Lenient on form, strict on meaning: amounts, dates, codes, and plain words."""
     if actual is None:
         return False
+    if isinstance(expected, dict):
+        # {any_of: [...]}: the same thing named two ways, such as a product's code or its id.
+        return any(_value_matches(option, actual) for option in expected.get("any_of", []))
     if isinstance(expected, list):
         pool = actual if isinstance(actual, list) else [actual]
         return all(any(_value_matches(item, other) for other in pool) for item in expected)

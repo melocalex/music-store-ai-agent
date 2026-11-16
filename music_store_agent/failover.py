@@ -39,14 +39,35 @@ PROVIDER_OUTAGES = (
     ModelRequestTimeout,
 )
 # A rate limit or a quota belongs to one model, so the next model can still answer. The breaker
-# then skips the limited model for a minute, or an hour for a daily quota. A rejected request
-# (bad key, unknown model) moves nothing: the next model would fail the same way.
+# then skips the limited model for a minute, or an hour for a daily quota. An HTTP 400 moves that
+# request on without opening the breaker. A bad key or an unknown model (401, 403, 404) moves
+# nothing: the next model would not fix a setup error.
 QUOTA_ERRORS = (ModelRateLimitError, ModelQuotaExceededError)
 FALLBACK_ON = PROVIDER_OUTAGES + QUOTA_ERRORS
 _HTTP_TOO_MANY = 429
+_HTTP_BAD_REQUEST = 400
 _DAILY_QUOTA_HINTS = ("perday", "per day", "per_day", "daily")
 
 _log = logging.getLogger(__name__)
+
+
+def is_bad_request(error: BaseException) -> bool:
+    """An HTTP 400 from one provider. Another model may accept the same turn.
+
+    Anthropic refuses a request whose reasoning block does not match the conversation, for
+    example. That says nothing about the next model, and nothing about this model for the next
+    turn, so the request moves on and the breaker stays closed. A bad key or an unknown model
+    (401, 403, 404) is a setup problem and still stops the turn.
+    """
+    return (
+        isinstance(error, ModelAPIError)
+        and getattr(error, "status_code", None) == _HTTP_BAD_REQUEST
+    )
+
+
+def moves_on(error: Exception) -> bool:
+    """The `fallback_on` rule: an outage, a limit, a missed deadline, or a rejected request."""
+    return isinstance(error, FALLBACK_ON) or is_bad_request(error)
 
 
 def is_quota_error(error: BaseException) -> bool:
@@ -176,6 +197,10 @@ class GuardedModel(WrapperModel):
                     type(error).__name__,
                 )
             raise
+        except ModelAPIError as error:
+            if is_bad_request(error):
+                _log.warning("model %s rejected the request (HTTP 400): moving on", self.model_id)
+            raise
         if breaker is not None and breaker.record_success():
             _log.info("breaker closed: model %s answered again", self.model_id)
         return response
@@ -227,7 +252,7 @@ def model_stack(
     guarded = [
         GuardedModel(model, seconds, guard) for model, guard in zip(models, kept, strict=False)
     ]
-    return FallbackModel(*guarded, fallback_on=FALLBACK_ON)
+    return FallbackModel(*guarded, fallback_on=moves_on)
 
 
 def model_chain(

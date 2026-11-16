@@ -6,6 +6,7 @@ call would be.
 """
 
 import asyncio
+import json
 import logging
 import threading
 import time
@@ -14,7 +15,13 @@ from datetime import date
 
 import anyio
 import httpx2
-from pydantic_ai.exceptions import ModelHTTPError, ModelQuotaExceededError, ModelUnavailableError
+from pydantic_ai.exceptions import (
+    ModelAuthenticationError,
+    ModelHTTPError,
+    ModelQuotaExceededError,
+    ModelRequestRejectedError,
+    ModelUnavailableError,
+)
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models import override_allow_model_requests
 from pydantic_ai.models.function import FunctionModel
@@ -22,7 +29,7 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
 from music_store_agent import failover, run
-from music_store_agent.agent import build_agent
+from music_store_agent.agent import _openrouter_model, build_agent
 from music_store_agent.constants import (
     PROVIDER_ERROR_MESSAGE,
     QUOTA_BREAKER_SECONDS,
@@ -496,3 +503,102 @@ def test_a_zero_window_never_skips_the_primary(tmp_path) -> None:
     _play(tmp_path / "first", chain)
     _play(tmp_path / "second", chain)
     assert calls == [PRIMARY, FALLBACK, PRIMARY, FALLBACK]
+
+
+# An HTTP 400 from the first model, such as Anthropic refusing a reasoning block that does not
+# match the conversation. It says nothing about the next model, so the request moves on.
+
+REJECTED = {
+    "message": "Provider returned error",
+    "code": 400,
+    "metadata": {"raw": "messages.1.content.0: Invalid `signature` in `thinking` block."},
+}
+
+
+def _rejecting(name: str, calls: list[str], status: int = 400, category=ModelRequestRejectedError):
+    def respond(_messages, _info):
+        calls.append(name)
+        raise ModelHTTPError.for_category(
+            category, status_code=status, model_name=name, body={"error": REJECTED}
+        )
+
+    return FunctionModel(respond, model_name=name)
+
+
+def test_a_400_from_the_first_model_moves_the_turn_on_without_opening_the_breaker(tmp_path) -> None:
+    calls: list[str] = []
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    chain = model_stack(
+        [_rejecting("primary", calls), _answering(PRIMARY, calls)], SHORT_TIMEOUT, [breaker]
+    )
+    assert _play(tmp_path / "first", chain).turn.message == "Olá."
+    assert breaker.remaining() == 0
+    assert _play(tmp_path / "second", chain).turn.message == "Olá."
+    assert calls == ["primary", PRIMARY, "primary", PRIMARY]
+
+
+def test_a_400_in_a_later_request_of_the_turn_still_ends_in_an_answer(tmp_path) -> None:
+    """The tool round worked on the first model, then its next request was refused."""
+    calls: list[str] = []
+    state = {"count": 0}
+
+    def tool_then_reject(messages, info):
+        calls.append("primary")
+        state["count"] += 1
+        if state["count"] == 1:
+            return ModelResponse(parts=[ToolCallPart(tool_name="check_hours", args={})])
+        raise ModelHTTPError.for_category(
+            ModelRequestRejectedError, status_code=400, model_name="primary", body=None
+        )
+
+    chain = model_stack(
+        [FunctionModel(tool_then_reject, model_name="primary"), _answering(PRIMARY, calls)],
+        SHORT_TIMEOUT,
+        [CircuitBreaker(WINDOW, clock=FakeClock())],
+    )
+    played = _play(tmp_path, chain)
+    assert played.turn.message == "Olá."
+    assert calls == ["primary", "primary", PRIMARY]
+
+
+def test_a_bad_key_still_stops_the_turn_instead_of_moving_on(tmp_path) -> None:
+    calls: list[str] = []
+    chain = model_stack(
+        [
+            _rejecting("primary", calls, 401, ModelAuthenticationError),
+            _answering(PRIMARY, calls),
+        ],
+        SHORT_TIMEOUT,
+    )
+    played = _play(tmp_path, chain)
+    assert played.turn.message == PROVIDER_ERROR_MESSAGE
+    assert calls == ["primary"]
+
+
+def test_every_model_answering_400_gives_the_provider_message(tmp_path) -> None:
+    calls: list[str] = []
+    chain = model_stack([_rejecting("a", calls), _rejecting("b", calls)], SHORT_TIMEOUT)
+    assert _play(tmp_path, chain).turn.message == PROVIDER_ERROR_MESSAGE
+    assert calls == ["a", "b"]
+
+
+def test_the_openrouter_model_turns_reasoning_off_and_a_real_400_moves_on(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    bodies: list[dict] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        return httpx2.Response(400, json={"error": REJECTED})
+
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(respond), timeout=30)
+    calls: list[str] = []
+    chain = model_stack(
+        [_openrouter_model("vendor/some-model", client), _answering(PRIMARY, calls)],
+        SHORT_TIMEOUT,
+        [CircuitBreaker(WINDOW, clock=FakeClock())],
+    )
+    assert _play(tmp_path, chain).turn.message == "Olá."
+    assert bodies and all(body["reasoning"] == {"enabled": False} for body in bodies)
+    assert calls == [PRIMARY]

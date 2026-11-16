@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import threading
+import time
 from datetime import date
 from decimal import Decimal
 
@@ -13,12 +15,14 @@ from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
 
+import music_store_agent.agent as agent_module
 from music_store_agent.agent import (
     _invented,
     _money,
     _openrouter_model,
     breaker_window,
     build_agent,
+    chain_ids,
     fallback_model_id,
     model_id,
     request_timeout,
@@ -431,3 +435,74 @@ def test_openrouter_alone_needs_no_gemini_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
     chain = build_agent().model
     assert [model.model_id for model in chain.models] == [f"openrouter:{DEFAULT_OPENROUTER_MODEL}"]
+
+
+def test_openrouter_reasoning_is_off(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    model = _openrouter_model("vendor/some-model")
+    assert model.settings is not None
+    assert model.settings["openrouter_reasoning"] == {"enabled": False}
+
+
+def test_chain_ids_match_the_chain_the_agent_builds(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    assert chain_ids() == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL, DEFAULT_RESERVE_MODEL]
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "vendor/some-model")
+    ids = chain_ids()
+    assert ids[0] == "openrouter:vendor/some-model"
+    assert ids == [model.model_id for model in build_agent().model.models]
+    assert chain_ids(DEFAULT_MODEL)[0] == DEFAULT_MODEL
+    monkeypatch.delenv("GOOGLE_API_KEY")
+    assert chain_ids() == ["openrouter:vendor/some-model"]
+
+
+def test_the_customers_message_is_quoted_in_the_instructions_to_set_the_reply_language(
+    tmp_path,
+) -> None:
+    def answer(_messages, _info):
+        args = {"message": "Hello.", "quotes": []}
+        return ModelResponse(parts=[ToolCallPart(tool_name="final_result", args=args)])
+
+    deps = make_deps(load_database(), today=PINNED, handoff_path=tmp_path / "handoffs.jsonl")
+    agent = build_agent(FunctionModel(answer))
+    result = asyncio.run(agent.run("How much is   the Yamaha C40?", deps=deps))
+    instructions = result.all_messages()[0].instructions
+    assert 'Mensagem atual da pessoa: "How much is the Yamaha C40?"' in instructions
+    assert "inglês" in instructions
+
+
+def test_two_tools_asked_in_one_response_never_touch_the_database_at_once(
+    tmp_path, monkeypatch
+) -> None:
+    """One SQLite connection serves every tool, so parallel tool calls would race on it."""
+    guard = threading.Lock()
+    state = {"inside": 0, "most": 0}
+    real = agent_module.load_catalog
+
+    def watched(conn):
+        with guard:
+            state["inside"] += 1
+            state["most"] = max(state["most"], state["inside"])
+        time.sleep(0.05)
+        try:
+            return real(conn)
+        finally:
+            with guard:
+                state["inside"] -= 1
+
+    monkeypatch.setattr(agent_module, "load_catalog", watched)
+
+    def respond(messages, _info):
+        if any(getattr(part, "part_kind", "") == "tool-return" for part in messages[-1].parts):
+            args = {"message": "Pronto.", "quotes": []}
+            return ModelResponse(parts=[ToolCallPart(tool_name="final_result", args=args)])
+        calls = [
+            ToolCallPart(tool_name="get_product", args={"query": "C40"}),
+            ToolCallPart(tool_name="search_catalog", args={"query": "violão"}),
+        ]
+        return ModelResponse(parts=calls)
+
+    deps = make_deps(load_database(), today=PINNED, handoff_path=tmp_path / "handoffs.jsonl")
+    asyncio.run(build_agent(FunctionModel(respond)).run("oi", deps=deps))
+    assert state["most"] == 1

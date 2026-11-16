@@ -37,7 +37,7 @@ A live answer needs a model key: `OPENROUTER_API_KEY` for the first model, `GOOG
 | Variable | Default | Sets |
 |---|---|---|
 | `OPENROUTER_API_KEY` | none | optional. With it, OpenRouter answers first and the Gemini models are the backup. Without it, OpenRouter is skipped |
-| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | the OpenRouter model slug |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | the OpenRouter model slug. Reasoning is turned off for it (`openrouter_reasoning: enabled false`), because a signed reasoning block sent back on a later request of the same turn can be refused with a 400 |
 | `MODEL` | `google:gemini-3.8-flash` | the first Gemini model |
 | `MODEL_FALLBACK` | `google:gemini-3.6-flash` | the backup model |
 | `MODEL_RESERVE` | `google:gemini-3.5-flash-lite` | the last model, a lite one with a larger daily allowance |
@@ -48,7 +48,7 @@ The model variables take any Pydantic AI id with the `google:` prefix. A cheaper
 
 ### Fallback, timeouts, and the breaker
 
-Every model request goes to the primary first, unless the breaker described below is open. A 503 or another 5xx, a connection failure, or a request past `MODEL_TIMEOUT_SECONDS` sends that same request to the fallback, with a fresh timeout. A rate limit or a quota on one model also moves the request on, because the next model has its own allowance. A bad key or an unknown model stays where it failed and gets its own message, because the next model would fail the same way or hide the cause.
+Every model request goes to the primary first, unless the breaker described below is open. A 503 or another 5xx, a connection failure, or a request past `MODEL_TIMEOUT_SECONDS` sends that same request to the fallback, with a fresh timeout. A rate limit or a quota on one model also moves the request on, because the next model has its own allowance. An HTTP 400 from one model moves that request on too, without opening the breaker: it can be one provider refusing one request, as when Anthropic rejects a reasoning block that does not match the conversation, and the next model may accept it. A bad key or an unknown model (401, 403, 404) stays where it failed and gets its own message, because the next model would hide the cause. A model that returns output the run cannot use, such as text where a reply was due, gets one more attempt at the turn, inside the same 45 seconds.
 
 The timeout is enforced twice. The HTTP client gets it as its timeout for each attempt, and each request also runs under a hard deadline: when `MODEL_TIMEOUT_SECONDS` pass, the app stops waiting, cancels the request, and leaves it behind instead of waiting for it to wind down. A socket that ignores the cancel therefore cannot hold the turn. The miss counts as a timeout, so the fallback runs.
 

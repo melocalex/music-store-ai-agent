@@ -2,13 +2,14 @@
 
 --stub replays each turn's scripted `stub` calls and reply through the real tools and the
 real price check, then scores the `expect` facts. It tests the tools and the guard, not a
-model. A live run sends the same prompts to Gemini and scores the same facts.
+model. A live run sends the same prompts to the app's model chain and scores the same facts.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import collections
 import os
 import re
 import statistics
@@ -30,17 +31,16 @@ from pydantic_ai.models.function import FunctionModel
 
 from evals.score import score_case
 from evals.stamp import git_commit, reference_day, written_at
-from music_store_agent.agent import build_agent, model_id
+from music_store_agent.agent import build_agent, chain_ids
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import (
     PROVIDER_ERROR_MESSAGE,
     SAFE_PRICE_MESSAGE,
     TURN_ERROR_MESSAGE,
-    TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.db import last_order_date, load_database
 from music_store_agent.deps import Deps, make_deps
-from music_store_agent.run import log_answering_model, provider_message
+from music_store_agent.run import log_answering_model, provider_message, run_agent
 from music_store_agent.textutil import amounts_in_text
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
@@ -72,6 +72,7 @@ class CaseRun:
     firings: int = 0
     catches: int = 0
     turns: int = 0
+    answered: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -82,8 +83,10 @@ class Pass:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if not args.stub and not os.environ.get("GOOGLE_API_KEY"):
-        print("Set GOOGLE_API_KEY or pass --stub.")
+    if not args.stub and not (
+        os.environ.get("GOOGLE_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+    ):
+        print("Set OPENROUTER_API_KEY or GOOGLE_API_KEY, or pass --stub.")
         return EXIT_NO_KEY
     cases = _select(yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8")), args.start)
     runs: list[Pass] = []
@@ -106,13 +109,17 @@ def _slug(args: argparse.Namespace) -> str:
     """Stub output stays local. A live run is named after its model and is committed."""
     if args.stub:
         return "stub"
-    return re.sub(r"[^a-z0-9.-]+", "-", model_id(args.model).casefold())
+    return re.sub(r"[^a-z0-9.-]+", "-", _chain_ids(args)[0].casefold())
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run store-assistant scenarios")
     parser.add_argument("--runs", type=int, default=3, help="passes over the scenario file")
-    parser.add_argument("--model", default=None, help="google:<model id>; defaults to MODEL")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="google:<model id>. Default: the app's chain, OpenRouter first when its key is set",
+    )
     parser.add_argument("--stub", action="store_true", help="scripted turns, no provider call")
     parser.add_argument("--from", dest="start", default=None, help="resume from this case id")
     return parser
@@ -154,6 +161,7 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
     transcript: list[dict[str, Any]] = []
     latency: list[float] = []
     requests: list[int] = []
+    answered: list[str] = []
     for turn in case["turns"]:
         started = time.perf_counter()
         firings = deps.counters.validator_firings
@@ -167,7 +175,7 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
             continue
         history = list(result.all_messages())
         fresh = list(result.new_messages())
-        log_answering_model(agent, fresh)
+        answered += log_answering_model(agent, fresh)
         calls, returns = _activity(fresh)
         transcript.append({"reply": result.output.message, "calls": calls, "returns": returns})
         requests.append(sum(isinstance(message, ModelResponse) for message in fresh))
@@ -182,6 +190,7 @@ async def _play(case: dict[str, Any], agent: Any, deps: Deps) -> CaseRun:
         counters.validator_firings,
         counters.validator_catches,
         len(case["turns"]),
+        answered,
     )
 
 
@@ -191,9 +200,7 @@ async def _attempt(
     """One turn, backing off on a rate limit. None means the turn failed inside the agent."""
     for delay in (*BACKOFF_SECONDS, None):
         try:
-            return await agent.run(
-                prompt, deps=deps, message_history=history, timeout=TURN_TIMEOUT_SECONDS
-            )
+            return await run_agent(agent, deps, prompt, history)
         except UnexpectedModelBehavior:
             return None
         except (FallbackExceptionGroup, RunTimedOut) as error:
@@ -278,7 +285,8 @@ def _report(runs: list[Pass], args: argparse.Namespace) -> str:
     for item in flat:
         by_id.setdefault(item.case_id, []).append(item.passed)
     flaky = [case_id for case_id, flags in by_id.items() if any(flags) and not all(flags)]
-    latency = [value for item in flat for value in item.latency_ms]
+    latency = sorted(value for item in flat for value in item.latency_ms)
+    answered = collections.Counter(name for item in flat for name in item.answered)
     requests = [value for item in flat for value in item.requests]
     lines = [
         "# Eval results",
@@ -290,27 +298,69 @@ def _report(runs: list[Pass], args: argparse.Namespace) -> str:
         f"Pass rate: {sum(item.passed for item in flat)}/{len(flat)} case-runs.",
         f"Strict pass (every run): {sum(all(flags) for flags in by_id.values())}/{len(by_id)}.",
         f"Flaky: {', '.join(flaky) if flaky else 'none'}.",
-        f"Median turn latency: {statistics.median(latency) if latency else 0:.1f} ms.",
+        f"Turn latency: P50 {_percentile(latency, 0.5):.0f} ms, "
+        f"P95 {_percentile(latency, 0.95):.0f} ms, max {latency[-1] if latency else 0:.0f} ms.",
         f"Median model requests per turn: {statistics.median(requests) if requests else 0:.1f}.",
         f"Validator fired {sum(item.firings for item in flat)} times in "
         f"{sum(item.turns for item in flat)} turns. True catches: "
         f"{sum(item.catches for item in flat)}.",
+        _answered_line(answered),
         "",
     ]
     stopped = runs[-1].stopped if runs else None
     if stopped is not None:
         lines += [f"Partial run. Stopped at {stopped}. Resume with --from {stopped.case_id}.", ""]
-    for item in runs[-1].cases if runs else []:
-        detail = "; ".join(item.failures)
-        lines.append(f"- {item.case_id}: {'pass' if item.passed else 'fail'} {detail}".rstrip())
+    lines += _case_lines(runs)
     lines.append("")
     return "\n".join(lines)
+
+
+def _case_lines(runs: list[Pass]) -> list[str]:
+    """One line per case: runs passed, and the failures of the latest run that failed it."""
+    order = [item.case_id for item in (runs[0].cases if runs else [])]
+    passed = {case_id: [] for case_id in order}
+    latest: dict[str, str] = {}
+    for run in runs:
+        for item in run.cases:
+            passed.setdefault(item.case_id, []).append(item.passed)
+            if not item.passed:
+                latest[item.case_id] = "; ".join(item.failures)
+    lines = []
+    for case_id in dict.fromkeys([*order, *passed]):
+        flags = passed[case_id]
+        detail = latest.get(case_id, "")
+        lines.append(f"- {case_id}: passed {sum(flags)}/{len(flags)} {detail}".rstrip())
+    return lines
 
 
 def _mode(args: argparse.Namespace) -> str:
     if args.stub:
         return "stub, scripted turns through the real tools and price check (not a model score)"
-    return model_id(args.model)
+    return "live, chain " + " -> ".join(_chain_ids(args))
+
+
+def _chain_ids(args: argparse.Namespace) -> list[str]:
+    """The models a live run asks, in order: what the app would ask for the same `--model`."""
+    return chain_ids(args.model)
+
+
+def _answered_line(answered: collections.Counter[str]) -> str:
+    """Which model produced each response, so a score is read against the model that earned it."""
+    total = sum(answered.values())
+    if not total:
+        return "Answered by: no live model response."
+    names = ", ".join(f"{name} {count}" for name, count in answered.most_common())
+    fallback = total - answered.most_common(1)[0][1]
+    return f"Answered by: {names}. Responses from a fallback model: {fallback} of {total}."
+
+
+def _percentile(sorted_values: list[float], fraction: float) -> float:
+    if not sorted_values:
+        return 0.0
+    position = (len(sorted_values) - 1) * fraction
+    low = int(position)
+    high = min(low + 1, len(sorted_values) - 1)
+    return sorted_values[low] + (sorted_values[high] - sorted_values[low]) * (position - low)
 
 
 if __name__ == "__main__":

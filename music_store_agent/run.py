@@ -1,10 +1,11 @@
 """One customer turn: caps, the model, then a fixed message for each kind of failure."""
 
 import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.exceptions import (
     FallbackExceptionGroup,
     ModelAPIError,
@@ -45,6 +46,33 @@ class Turn:
     new_messages: tuple[ModelMessage, ...] = ()
 
 
+async def run_agent(
+    agent: Agent[Deps, AgentReply],
+    deps: Deps,
+    message: str,
+    history: list[ModelMessage],
+) -> AgentRunResult[AgentReply]:
+    """Run the agent once, and once more if the model's own output made it give up.
+
+    `UnexpectedModelBehavior` is a model that answered in a way the run could not use: text where
+    a reply was due, or tool arguments that stayed invalid. A second attempt usually fixes it. A
+    turn the price check already gave up on is not retried, and the retry only gets what is left
+    of the turn budget, so a customer never waits longer than `TURN_TIMEOUT_SECONDS`.
+    """
+    started = time.monotonic()
+    firings = deps.counters.validator_firings
+    try:
+        return await agent.run(
+            message, deps=deps, message_history=history, timeout=TURN_TIMEOUT_SECONDS
+        )
+    except UnexpectedModelBehavior as error:
+        left = TURN_TIMEOUT_SECONDS - (time.monotonic() - started)
+        if deps.counters.validator_firings > firings or left <= 0:
+            raise
+        _log.warning("turn retried once: %s", error_label(error))
+        return await agent.run(message, deps=deps, message_history=history, timeout=left)
+
+
 async def run_turn(
     agent: Agent[Deps, AgentReply],
     deps: Deps,
@@ -55,9 +83,7 @@ async def run_turn(
         return Turn(INPUT_TOO_LONG_MESSAGE, (), tuple(history), limited=True)
     firings = deps.counters.validator_firings
     try:
-        result = await agent.run(
-            message, deps=deps, message_history=history, timeout=TURN_TIMEOUT_SECONDS
-        )
+        result = await run_agent(agent, deps, message, history)
     except ModelAPIError as error:
         _log.warning("provider error: %s", error_label(error))
         return _unanswered(history, provider_message(error))
@@ -80,24 +106,30 @@ async def run_turn(
     return Turn(reply.message, tuple(reply.quotes), tuple(result.all_messages()), False, fresh)
 
 
-def log_answering_model(agent: Agent[Deps, AgentReply], messages: Sequence[ModelMessage]) -> None:
-    """Name the model behind each response of the turn. A fallback answer is a warning.
+def log_answering_model(
+    agent: Agent[Deps, AgentReply], messages: Sequence[ModelMessage]
+) -> list[str]:
+    """Name the model behind each response of the turn, and return those ids in order.
 
-    Only model ids and error types are logged: an error message can carry the provider's body.
+    A fallback answer is a warning. Only model ids and error types are logged: an error message
+    can carry the provider's body.
     """
     chain = agent.model
+    names: list[str] = []
     if not isinstance(chain, FallbackModel):
-        return
+        return names
     for message in messages:
         if not isinstance(message, ModelResponse):
             continue
         failed = message.failed_attempts or []
         answered = chain.models[min(len(failed), len(chain.models) - 1)].model_id
+        names.append(answered)
         if not failed:
             _log.info("primary model %s answered", answered)
             continue
         causes = ", ".join(_attempt_text(attempt.model_name, attempt.error) for attempt in failed)
         _log.warning("fallback model %s answered after %s", answered, causes)
+    return names
 
 
 def _attempt_text(model_name: str, error: str | None) -> str:

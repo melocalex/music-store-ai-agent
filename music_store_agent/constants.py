@@ -24,6 +24,7 @@ OPENROUTER_MODEL_ENV = "OPENROUTER_MODEL"
 DEFAULT_OPENROUTER_MODEL = "anthropic/claude-haiku-5.5"
 OPENROUTER_APP_URL = "https://aria-music-store.streamlit.app/"
 OPENROUTER_APP_TITLE = "Aria"
+OPENROUTER_SETTINGS = {"openrouter_reasoning": {"enabled": False}}
 # The reserve is a lite model: the flash models allow few requests a day on a free key.
 DEFAULT_RESERVE_MODEL = f"{MODEL_PROVIDER}:gemini-3.5-flash-lite"
 MODEL_RESERVE_ENV = "MODEL_RESERVE"

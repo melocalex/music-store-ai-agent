@@ -130,9 +130,43 @@ def test_each_failure_logs_its_type_and_status_without_the_body(tmp_path, caplog
     assert both.message == PROVIDER_ERROR_MESSAGE
     assert _warnings(caplog) == [
         "provider error: ModelAuthenticationError status=401 model=gemini-3.8-flash",
+        "turn retried once: UnexpectedModelBehavior",
         "turn failed: UnexpectedModelBehavior",
         "no model answered: ModelUnavailableError status=503 model=gemini-3.6-flash, "
         "ModelUnavailableError status=503 model=gemini-3.6-flash",
     ]
     assert "AIza" not in caplog.text
     assert "not valid" not in caplog.text
+
+
+REQUESTS_PER_RUN = 3  # the output is retried twice, so a run that gives up made three requests
+
+
+def test_a_reply_the_model_gets_wrong_once_is_retried_and_answers(tmp_path, caplog) -> None:
+    calls = {"count": 0}
+
+    def text_then_final(messages, info):
+        calls["count"] += 1
+        if calls["count"] <= REQUESTS_PER_RUN:
+            return _plain_text(messages, info)
+        return _final(messages, info)
+
+    with caplog.at_level(logging.WARNING, logger="music_store_agent.run"):
+        turn, deps = _turn(tmp_path, text_then_final)
+    assert turn.message == "Olá."
+    assert not turn.limited
+    assert calls["count"] == REQUESTS_PER_RUN + 1
+    assert "turn retried once: UnexpectedModelBehavior" in _warnings(caplog)
+    assert deps.counters.validator_firings == 0
+
+
+def test_a_model_that_keeps_giving_unusable_output_gets_only_one_retry(tmp_path) -> None:
+    calls = {"count": 0}
+
+    def always_text(messages, info):
+        calls["count"] += 1
+        return _plain_text(messages, info)
+
+    turn, _ = _turn(tmp_path, always_text)
+    assert turn.message == TURN_ERROR_MESSAGE
+    assert calls["count"] == 2 * REQUESTS_PER_RUN

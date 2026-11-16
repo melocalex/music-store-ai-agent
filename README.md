@@ -21,7 +21,7 @@
 |:-:|---|---|
 | **1** | git | the code, the store CSVs, and the policy PDF |
 | **2** | Python 3.12 | the app, the CLI, and the test tools |
-| **3** | nothing else | lint, format, 181 tests, and 28 scenarios through the real tools, all offline |
+| **3** | nothing else | lint, format, 198 tests, and 28 scenarios through the real tools, all offline |
 
 ```bash
 # 1. Clone
@@ -152,6 +152,8 @@ music-store-ai-agent/
 
 | Situation | What happens |
 |---|---|
+| A reply repeats a number the customer typed, such as a budget of R$ 1.000,00, or lists a dozen prices in one sentence | The check can refuse an honest reply. After two retries the customer gets the short message and the team gets a handoff. In the live eval, the budget question fails 3 runs of 3 for this reason |
+| A model answers a follow-up turn from the conversation and puts the amounts in the wrong quote | Same path as above. The live eval shows it in the 6x installment follow-up on some runs |
 | A reply puts a price in a sentence that names a different product | The check rejects it. After two retries the customer gets a short message and the team gets a handoff |
 | A product is named only by brand, as in "o Takamine" | The sentence check cannot tie the amount to a model, so it relies on the quote's product id |
 | A clause sits between a model and its price, as in "o C40, ao lado do C70, sai por R$ 599,90" | The price is tied to the nearest model before the verb, the C70, so the honest reply is refused and the model rewrites it |
