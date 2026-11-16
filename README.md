@@ -21,7 +21,7 @@
 |:-:|---|---|
 | **1** | git | the code, the store CSVs, and the policy PDF |
 | **2** | Python 3.12 | the app, the CLI, and the test tools |
-| **3** | nothing else | lint, format, 198 tests, and 28 scenarios through the real tools, all offline |
+| **3** | nothing else | lint, format, 240 tests, and 28 scenarios through the real tools, all offline |
 
 ```bash
 # 1. Clone
