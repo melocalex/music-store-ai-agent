@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai.exceptions import (
+    ModelAPIError,
     ModelConnectionError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
     ModelRequestTimeout,
     ModelServerError,
     ModelUnavailableError,
@@ -20,23 +23,65 @@ from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
-from music_store_agent.constants import DEFAULT_REQUEST_TIMEOUT_SECONDS, PROVIDER_SDK_RETRIES
+from music_store_agent.constants import (
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    PROVIDER_SDK_RETRIES,
+    QUOTA_BREAKER_SECONDS,
+    RATE_LIMIT_BREAKER_SECONDS,
+)
 
-# Provider outages and a request past its deadline move that request to the fallback and open
-# the primary's breaker. A rate limit, a quota, or a rejected request (bad key, unknown model)
-# does neither: the fallback would fail the same way or hide the cause.
+# Provider outages and a request past its deadline move that request to the next model and open
+# the breaker of the one that failed.
 PROVIDER_OUTAGES = (
     ModelUnavailableError,
     ModelServerError,
     ModelConnectionError,
     ModelRequestTimeout,
 )
+# A rate limit or a quota belongs to one model, so the next model can still answer. The breaker
+# then skips the limited model for a minute, or an hour for a daily quota. A rejected request
+# (bad key, unknown model) moves nothing: the next model would fail the same way.
+QUOTA_ERRORS = (ModelRateLimitError, ModelQuotaExceededError)
+FALLBACK_ON = PROVIDER_OUTAGES + QUOTA_ERRORS
+_HTTP_TOO_MANY = 429
+_DAILY_QUOTA_HINTS = ("perday", "per day", "per_day", "daily")
 
 _log = logging.getLogger(__name__)
 
 
+def is_quota_error(error: BaseException) -> bool:
+    """A 429, or the error classes pydantic-ai maps from one."""
+    if isinstance(error, QUOTA_ERRORS):
+        return True
+    return (
+        isinstance(error, ModelAPIError) and getattr(error, "status_code", None) == _HTTP_TOO_MANY
+    )
+
+
+def is_daily_quota(error: BaseException) -> bool:
+    """True for a 429 that says the day's quota is spent, not the minute's."""
+    if not is_quota_error(error):
+        return False
+    if isinstance(error, ModelQuotaExceededError):
+        return True
+    body = f"{getattr(error, 'body', '')} {error}".casefold()
+    return any(hint in body for hint in _DAILY_QUOTA_HINTS)
+
+
+def limit_window(error: BaseException) -> float | None:
+    """How long a limited model is skipped. None keeps the breaker's own outage window."""
+    if not is_quota_error(error):
+        return None
+    return QUOTA_BREAKER_SECONDS if is_daily_quota(error) else RATE_LIMIT_BREAKER_SECONDS
+
+
 class PrimaryBreakerOpen(ModelUnavailableError):
-    """Raised instead of calling a primary whose breaker is open. The fallback answers at once."""
+    """Raised instead of calling a model whose breaker is open. The next model answers at once.
+
+    `quota` is "day" or "minute" when the breaker opened on a limit, and empty after an outage.
+    """
+
+    quota: str = ""
 
 
 @dataclass
@@ -51,6 +96,8 @@ class CircuitBreaker:
     window: float
     clock: Callable[[], float] = time.monotonic
     opened_at: float | None = None
+    quota: str = ""
+    _span: float | None = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def remaining(self) -> float:
@@ -58,16 +105,21 @@ class CircuitBreaker:
         with self._lock:
             if self.opened_at is None:
                 return 0.0
-            return max(0.0, self.opened_at + self.window - self.clock())
+            span = self.window if self._span is None else self._span
+            return max(0.0, self.opened_at + span - self.clock())
 
-    def record_outage(self) -> None:
+    def record_outage(self, span: float | None = None, quota: str = "") -> None:
+        """Open the breaker. A window of zero never skips, whatever the span."""
         with self._lock:
             self.opened_at = self.clock()
+            self._span = None if self.window <= 0 else span
+            self.quota = quota
 
     def record_success(self) -> bool:
         """Close the breaker. True when it had been opened."""
         with self._lock:
             was_open, self.opened_at = self.opened_at is not None, None
+            self._span, self.quota = None, ""
         return was_open
 
 
@@ -104,24 +156,28 @@ class GuardedModel(WrapperModel):
         breaker = self.breaker
         if breaker is not None and (left := breaker.remaining()) > 0:
             _log.warning(
-                "primary model %s skipped: breaker open for %.0f more seconds", self.model_id, left
+                "model %s skipped: breaker open for %.0f more seconds", self.model_id, left
             )
-            raise PrimaryBreakerOpen(self.model_name, "breaker open after a recent outage")
+            skipped = PrimaryBreakerOpen(self.model_name, "breaker open after a recent failure")
+            skipped.quota = breaker.quota
+            raise skipped
         call = self.wrapped.request(messages, model_settings, model_request_parameters)
         try:
             response = await within_deadline(call, self.seconds, self.model_name)
-        except PROVIDER_OUTAGES as error:
+        except FALLBACK_ON as error:
             if breaker is not None:
-                breaker.record_outage()
+                span = limit_window(error)
+                quota = "" if span is None else ("day" if is_daily_quota(error) else "minute")
+                breaker.record_outage(span, quota)
                 _log.warning(
-                    "breaker opened: primary model %s skipped for %.0f seconds after %s",
+                    "breaker opened: model %s skipped for %.0f seconds after %s",
                     self.model_id,
-                    breaker.window,
+                    breaker.remaining(),
                     type(error).__name__,
                 )
             raise
         if breaker is not None and breaker.record_success():
-            _log.info("breaker closed: primary model %s answered again", self.model_id)
+            _log.info("breaker closed: model %s answered again", self.model_id)
         return response
 
 
@@ -162,14 +218,19 @@ def model_chain(
     fallback: Model | str,
     seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     breaker: CircuitBreaker | None = None,
+    reserve: Model | str | None = None,
+    later_breakers: tuple[CircuitBreaker | None, ...] = (),
 ) -> FallbackModel:
-    """The primary answers. An outage or a missed deadline moves that request to the fallback.
+    """The primary answers. An outage, a missed deadline, or a limit moves that request on.
 
-    With a breaker, a primary outage also sends the next requests straight to the fallback until
-    the breaker's window passes.
+    With a breaker, a failure also sends the next requests straight past that model until the
+    breaker's window passes. `later_breakers` guard the fallback, then the reserve. A model
+    without one is tried on every request.
     """
-    return FallbackModel(
-        GuardedModel(primary, seconds, breaker),
-        GuardedModel(fallback, seconds),
-        fallback_on=PROVIDER_OUTAGES,
-    )
+    chain = [primary, fallback] if reserve is None else [primary, fallback, reserve]
+    breakers = [breaker, *later_breakers]
+    breakers += [None] * (len(chain) - len(breakers))
+    models = [
+        GuardedModel(model, seconds, kept) for model, kept in zip(chain, breakers, strict=False)
+    ]
+    return FallbackModel(*models, fallback_on=FALLBACK_ON)

@@ -26,12 +26,14 @@ from music_store_agent.constants import (
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    DEFAULT_RESERVE_MODEL,
     DESTINATION_CITY,
     MODEL_ATTEMPTS_PER_REQUEST,
     MODEL_BREAKER_ENV,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
+    MODEL_RESERVE_ENV,
     MODEL_TIMEOUT_ENV,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
@@ -67,6 +69,11 @@ def model_id(raw: str | None = None) -> str:
 def fallback_model_id(raw: str | None = None) -> str:
     """Return the fallback Gemini id, checked the same way as the primary."""
     return _gemini_id(raw, MODEL_FALLBACK_ENV, DEFAULT_FALLBACK_MODEL)
+
+
+def reserve_model_id(raw: str | None = None) -> str:
+    """Return the reserve Gemini id: a lite model that answers when the others are limited."""
+    return _gemini_id(raw, MODEL_RESERVE_ENV, DEFAULT_RESERVE_MODEL)
 
 
 def _gemini_id(raw: str | None, env: str, default: str) -> str:
@@ -114,15 +121,22 @@ def build_agent(
 ) -> Agent[Deps, AgentReply]:
     """A Model instance runs as given, with only the settings passed in.
 
-    An id, or nothing, runs that primary with the fallback behind it, each request under the
-    hard deadline and the HTTP timeout.
+    An id, or nothing, runs that primary with the fallback and the reserve behind it, each
+    request under the hard deadline and the HTTP timeout.
     """
     if isinstance(model, Model):
         chosen: Model = model
     else:
-        primary, fallback = model_id(model), fallback_model_id()
+        primary, fallback, reserve = model_id(model), fallback_model_id(), reserve_model_id()
         seconds, window = request_timeout(), breaker_window()
-        chosen = model_chain(primary, fallback, seconds, shared_breaker(primary, window))
+        chosen = model_chain(
+            primary,
+            fallback,
+            seconds,
+            shared_breaker(primary, window),
+            reserve,
+            (shared_breaker(fallback, window), None),
+        )
         settings = settings or request_settings(seconds)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,

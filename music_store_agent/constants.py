@@ -18,16 +18,23 @@ DEFAULT_MODEL = f"{MODEL_PROVIDER}:gemini-3.8-flash"
 MODEL_ENV = "MODEL"
 DEFAULT_FALLBACK_MODEL = f"{MODEL_PROVIDER}:gemini-3.6-flash"
 MODEL_FALLBACK_ENV = "MODEL_FALLBACK"
+# The reserve is a lite model: the flash models allow few requests a day on a free key.
+DEFAULT_RESERVE_MODEL = f"{MODEL_PROVIDER}:gemini-3.5-flash-lite"
+MODEL_RESERVE_ENV = "MODEL_RESERVE"
 MODEL_TIMEOUT_ENV = "MODEL_TIMEOUT_SECONDS"
-# One request gets one attempt on the primary, then one on the fallback, each under the timeout.
+# One request gets one attempt on each model in turn, each under the timeout.
 # Both must fit in one turn, and no provider SDK retry is stacked on top.
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 20.0
-MODEL_ATTEMPTS_PER_REQUEST = 2
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 15.0
+MODEL_ATTEMPTS_PER_REQUEST = 3
 PROVIDER_SDK_RETRIES = 0
 TURN_TIMEOUT_SECONDS = 45.0
 # After a primary outage, requests skip the primary for this long, then try it again.
 MODEL_BREAKER_ENV = "MODEL_BREAKER_SECONDS"
 DEFAULT_BREAKER_SECONDS = 300.0
+# A model that hit its per-minute limit is skipped for a minute, one that hit its daily quota
+# for an hour.
+RATE_LIMIT_BREAKER_SECONDS = 60.0
+QUOTA_BREAKER_SECONDS = 3600.0
 CLOCK_ENV = "MUSIC_STORE_CLOCK"
 TODAY_ENV = "MUSIC_STORE_TODAY"
 REAL_CLOCK_VALUE = "real"
@@ -152,8 +159,8 @@ SAFE_PRICE_MESSAGE = (
     "Vou chamar alguém da equipe para seguir com você."
 )
 RATE_LIMIT_MESSAGE = (
-    "O serviço que gera as respostas atingiu o limite de uso agora. "
-    f"Tente de novo mais tarde ou fale no WhatsApp {WHATSAPP_PHONE}."
+    "O serviço que gera as respostas está com muitos pedidos neste minuto. "
+    f"Tente de novo em instantes ou fale no WhatsApp {WHATSAPP_PHONE}."
 )
 QUOTA_DAY_MESSAGE = (
     "O serviço que gera as respostas atingiu a cota de hoje. "

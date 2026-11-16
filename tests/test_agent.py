@@ -29,11 +29,13 @@ from music_store_agent.constants import (
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    DEFAULT_RESERVE_MODEL,
     MODEL_ATTEMPTS_PER_REQUEST,
     MODEL_BREAKER_ENV,
     MODEL_ENV,
     MODEL_FALLBACK_ENV,
     MODEL_PROVIDER,
+    MODEL_RESERVE_ENV,
     MODEL_TIMEOUT_ENV,
     OUTPUT_RETRIES,
     PROVIDER_SDK_RETRIES,
@@ -71,16 +73,21 @@ def test_unknown_model_prefix_fails_at_startup(monkeypatch) -> None:
         model_id("openai:gpt-4o")
 
 
-def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
+def test_live_agent_puts_the_fallback_and_the_reserve_behind_the_primary(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
     monkeypatch.delenv(MODEL_ENV, raising=False)
     monkeypatch.delenv(MODEL_FALLBACK_ENV, raising=False)
+    monkeypatch.delenv(MODEL_RESERVE_ENV, raising=False)
     monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
     monkeypatch.delenv(MODEL_BREAKER_ENV, raising=False)
     agent = build_agent()
     chain = agent.model
     assert isinstance(chain, FallbackModel)
-    assert [model.model_id for model in chain.models] == [DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL]
+    assert [model.model_id for model in chain.models] == [
+        DEFAULT_MODEL,
+        DEFAULT_FALLBACK_MODEL,
+        DEFAULT_RESERVE_MODEL,
+    ]
     for model in chain.models:
         assert isinstance(model, GuardedModel)
         assert isinstance(model.wrapped, GoogleModel)
@@ -89,8 +96,9 @@ def test_live_agent_puts_the_fallback_behind_the_primary(monkeypatch) -> None:
         "timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
         "max_retries": PROVIDER_SDK_RETRIES,
     }
-    primary, fallback = chain.models
-    assert fallback.breaker is None
+    primary, fallback, reserve = chain.models
+    assert reserve.breaker is None
+    assert fallback.breaker is not None
     assert primary.breaker is not None
     assert primary.breaker.window == DEFAULT_BREAKER_SECONDS
     again = build_agent().model

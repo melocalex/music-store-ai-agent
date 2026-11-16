@@ -8,7 +8,6 @@ from pydantic_ai import Agent
 from pydantic_ai.exceptions import (
     FallbackExceptionGroup,
     ModelAPIError,
-    ModelRateLimitError,
     RunTimedOut,
     UnexpectedModelBehavior,
 )
@@ -31,13 +30,15 @@ from music_store_agent.constants import (
     TURN_TIMEOUT_SECONDS,
 )
 from music_store_agent.deps import Deps
-from music_store_agent.failover import PrimaryBreakerOpen
+from music_store_agent.failover import (
+    PrimaryBreakerOpen,
+    is_daily_quota,
+    is_quota_error,
+)
 from music_store_agent.guard import AgentReply, PriceQuote
 from music_store_agent.handoff import HandoffCase, follow_up, write_handoff
-from music_store_agent.usage import reserve
+from music_store_agent.usage import release, reserve
 
-_HTTP_TOO_MANY = 429
-_DAILY_QUOTA_HINTS = ("perday", "per day", "per_day", "daily")
 _log = logging.getLogger(__name__)
 
 
@@ -72,17 +73,20 @@ async def run_turn(
         )
     except ModelAPIError as error:
         _log.warning("provider error: %s", error_label(error))
-        return Turn(provider_message(error), (), tuple(history), limited=True)
+        return _unanswered(deps, history, provider_message(error))
     except (FallbackExceptionGroup, RunTimedOut) as error:
-        # Both models had an outage, or the turn ran past its budget.
+        # Every model failed, or the turn ran past its budget.
         _log.warning("no model answered: %s", error_label(error))
-        return Turn(PROVIDER_ERROR_MESSAGE, (), tuple(history), limited=True)
+        return _unanswered(deps, history, group_message(error))
     except UnexpectedModelBehavior as error:
         if deps.counters.validator_firings > firings:
             _log.warning("price check gave up: %s", error_label(error))
             return _safe_price(deps, history)
         _log.warning("turn failed: %s", error_label(error))
-        return Turn(TURN_ERROR_MESSAGE, (), tuple(history), limited=True)
+        return _unanswered(deps, history, TURN_ERROR_MESSAGE)
+    except Exception as error:
+        _log.warning("turn crashed: %s", error_label(error))
+        return _unanswered(deps, history, TURN_ERROR_MESSAGE)
     reply = result.output
     fresh = tuple(result.new_messages())
     log_answering_model(agent, fresh)
@@ -116,16 +120,49 @@ def _attempt_text(model_name: str, error: str | None) -> str:
     return f"{model_name} failed with {error_type}"
 
 
+def _unanswered(deps: Deps, history: list[ModelMessage], message: str) -> Turn:
+    """A turn no model answered does not count against the day's cap."""
+    release(deps.paths.usage, real_clock().today())
+    return Turn(message, (), tuple(history), limited=True)
+
+
 def provider_message(error: ModelAPIError) -> str:
-    """A 429 is a quota. Its body says whether it is the daily one. Anything else is generic."""
-    limited = isinstance(error, ModelRateLimitError)
-    limited = limited or getattr(error, "status_code", None) == _HTTP_TOO_MANY
-    if not limited:
+    """A 429 is a limit. Its body says whether it is the day's quota. Anything else is generic."""
+    if not is_quota_error(error):
         return PROVIDER_ERROR_MESSAGE
-    body = f"{getattr(error, 'body', '')} {error}".casefold()
-    if any(hint in body for hint in _DAILY_QUOTA_HINTS):
-        return QUOTA_DAY_MESSAGE
-    return RATE_LIMIT_MESSAGE
+    return QUOTA_DAY_MESSAGE if is_daily_quota(error) else RATE_LIMIT_MESSAGE
+
+
+def group_message(error: BaseException) -> str:
+    """The message for a turn where every model failed.
+
+    Only when every model hit a limit is the limit the reason: the day's quota if all of them
+    spent it, otherwise the per-minute message. Any outage among them is a plain provider failure.
+    """
+    causes = _leaves(error)
+    if not causes or not all(_is_limit(cause) for cause in causes):
+        return PROVIDER_ERROR_MESSAGE
+    return (
+        QUOTA_DAY_MESSAGE if all(_is_day_limit(cause) for cause in causes) else RATE_LIMIT_MESSAGE
+    )
+
+
+def _leaves(error: BaseException) -> list[BaseException]:
+    if isinstance(error, BaseExceptionGroup):
+        return [leaf for inner in error.exceptions for leaf in _leaves(inner)]
+    return [error]
+
+
+def _is_limit(error: BaseException) -> bool:
+    if isinstance(error, PrimaryBreakerOpen):
+        return bool(error.quota)
+    return is_quota_error(error)
+
+
+def _is_day_limit(error: BaseException) -> bool:
+    if isinstance(error, PrimaryBreakerOpen):
+        return error.quota == "day"
+    return is_daily_quota(error)
 
 
 def error_label(error: BaseException) -> str:

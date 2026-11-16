@@ -6,6 +6,7 @@ call would be.
 """
 
 import asyncio
+import json
 import logging
 import threading
 import time
@@ -23,7 +24,13 @@ from pydantic_ai.providers.google import GoogleProvider
 
 from music_store_agent import failover, run
 from music_store_agent.agent import build_agent
-from music_store_agent.constants import PROVIDER_ERROR_MESSAGE, RATE_LIMIT_MESSAGE
+from music_store_agent.constants import (
+    PROVIDER_ERROR_MESSAGE,
+    QUOTA_BREAKER_SECONDS,
+    QUOTA_DAY_MESSAGE,
+    RATE_LIMIT_BREAKER_SECONDS,
+    RATE_LIMIT_MESSAGE,
+)
 from music_store_agent.db import load_database
 from music_store_agent.deps import Deps, make_deps
 from music_store_agent.failover import CircuitBreaker, model_chain, request_settings
@@ -37,11 +44,25 @@ QUICK = 1.0
 PINNED = date(2026, 3, 23)
 PRIMARY = "gemini-3.8-flash"
 FALLBACK = "gemini-3.6-flash"
+RESERVE = "gemini-3.5-flash-lite"
 UNAVAILABLE = {
     "error": {
         "code": 503,
         "message": "The service is currently unavailable.",
         "status": "UNAVAILABLE",
+    }
+}
+DAY_LIMITED = {
+    "error": {
+        "code": 429,
+        "message": "Generate content requests per day limit exceeded on Free Tier.",
+        "status": "RESOURCE_EXHAUSTED",
+        "details": [
+            {
+                "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                "violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}],
+            }
+        ],
     }
 }
 RATE_LIMITED = {
@@ -244,12 +265,62 @@ def test_a_turn_stops_at_its_budget_whatever_the_model_does(tmp_path, monkeypatc
     assert not played.deps.paths.handoff.exists()
 
 
-def test_a_rate_limit_is_not_an_outage_and_stays_on_the_primary(tmp_path) -> None:
+def test_a_primary_rate_limit_moves_the_turn_to_the_fallback(tmp_path) -> None:
     calls: list[str] = []
     chain = model_chain(_gemini(PRIMARY, 429, RATE_LIMITED, calls), _answering(FALLBACK, calls))
     played = _play(tmp_path, chain)
+    assert played.turn.message == "Olá."
+    assert not played.turn.limited
+    assert calls == [PRIMARY, FALLBACK]
+
+
+def test_every_model_at_its_minute_limit_says_to_try_again_in_a_moment(tmp_path) -> None:
+    calls: list[str] = []
+    chain = model_chain(
+        _gemini(PRIMARY, 429, RATE_LIMITED, calls), _gemini(FALLBACK, 429, RATE_LIMITED, calls)
+    )
+    played = _play(tmp_path, chain)
     assert played.turn.message == RATE_LIMIT_MESSAGE
-    assert calls == [PRIMARY]
+    assert played.turn.limited
+    assert calls == [PRIMARY, FALLBACK]
+
+
+def test_the_reserve_answers_when_both_flash_models_spent_their_day(tmp_path) -> None:
+    calls: list[str] = []
+    day = lambda name: _gemini(name, 429, DAY_LIMITED, calls)  # noqa: E731
+    chain = model_chain(
+        day(PRIMARY), day(FALLBACK), SHORT_TIMEOUT, None, _answering(RESERVE, calls)
+    )
+    played = _play(tmp_path, chain)
+    assert played.turn.message == "Olá."
+    assert calls == [PRIMARY, FALLBACK, RESERVE]
+
+
+def test_every_model_with_its_day_spent_says_so(tmp_path) -> None:
+    calls: list[str] = []
+    chain = model_chain(
+        _gemini(PRIMARY, 429, DAY_LIMITED, calls), _gemini(FALLBACK, 429, DAY_LIMITED, calls)
+    )
+    played = _play(tmp_path, chain)
+    assert played.turn.message == QUOTA_DAY_MESSAGE
+
+
+def test_a_limit_mixed_with_an_outage_is_a_plain_provider_failure(tmp_path) -> None:
+    calls: list[str] = []
+    chain = model_chain(
+        _gemini(PRIMARY, 503, UNAVAILABLE, calls), _gemini(FALLBACK, 429, DAY_LIMITED, calls)
+    )
+    assert _play(tmp_path, chain).turn.message == PROVIDER_ERROR_MESSAGE
+
+
+def test_a_turn_no_model_answered_does_not_use_the_daily_cap(tmp_path) -> None:
+    chain = model_chain(
+        _gemini(PRIMARY, 503, UNAVAILABLE, []), _gemini(FALLBACK, 503, UNAVAILABLE, [])
+    )
+    played = _play(tmp_path, chain)
+    assert played.turn.limited
+    usage = json.loads((tmp_path / "turns.json").read_text(encoding="utf-8"))
+    assert usage["count"] == 0
 
 
 # Circuit breaker on the primary. A fake clock stands in for time.monotonic.
@@ -317,12 +388,12 @@ def test_after_a_primary_503_the_next_turn_skips_it(tmp_path, caplog) -> None:
     assert breaker_lines == [
         (
             logging.WARNING,
-            f"breaker opened: primary model google:{PRIMARY} skipped for {WINDOW:.0f} seconds"
+            f"breaker opened: model google:{PRIMARY} skipped for {WINDOW:.0f} seconds"
             " after ModelUnavailableError",
         ),
         (
             logging.WARNING,
-            f"primary model google:{PRIMARY} skipped: breaker open for {WINDOW:.0f} more seconds",
+            f"model google:{PRIMARY} skipped: breaker open for {WINDOW:.0f} more seconds",
         ),
     ]
     answered = [r.getMessage() for r in caplog.records if r.name == run.__name__]
@@ -397,15 +468,18 @@ def test_the_primary_is_tried_again_after_the_window(tmp_path) -> None:
     assert turn_at(2 * WINDOW) == [PRIMARY]
 
 
-def test_a_rate_limit_does_not_open_the_breaker(tmp_path) -> None:
-    calls: list[str] = []
-    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
-    primary = _gemini(PRIMARY, 429, RATE_LIMITED, calls)
-    chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
-    for name in ("first", "second"):
-        assert _play(tmp_path / name, chain).turn.message == RATE_LIMIT_MESSAGE
-    assert calls == [PRIMARY, PRIMARY]
-    assert breaker.remaining() == 0
+def test_a_minute_limit_skips_that_model_for_a_minute_and_a_day_limit_for_an_hour(tmp_path) -> None:
+    for body, span, name in (
+        (RATE_LIMITED, RATE_LIMIT_BREAKER_SECONDS, "minute"),
+        (DAY_LIMITED, QUOTA_BREAKER_SECONDS, "day"),
+    ):
+        calls: list[str] = []
+        breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+        primary = _gemini(PRIMARY, 429, body, calls)
+        chain = model_chain(primary, _answering(FALLBACK, calls), SHORT_TIMEOUT, breaker)
+        assert _play(tmp_path / name, chain).turn.message == "Olá."
+        assert breaker.remaining() == span
+        assert breaker.quota == name
 
 
 def test_a_zero_window_never_skips_the_primary(tmp_path) -> None:

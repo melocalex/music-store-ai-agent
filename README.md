@@ -158,7 +158,8 @@ music-store-ai-agent/
 | A percent written in words, as in "cinco por cento" | The percent check reads digits only |
 | Carnival or Corpus Christi | The dates are computed from Easter and flagged, but the store has no set hours for them, so Aria does not confirm hours and hands off. Good Friday is closed |
 | Freight to another city | Not calculated. The team quotes it |
-| Gemini 3.8 Flash is down or takes more than 20 seconds | The request moves to Gemini 3.6 Flash, and later requests skip 3.8 for five minutes. If both fail, or the turn passes 45 seconds, a short message asks to try again |
+| A model is down, past 15 seconds, or at its rate limit or daily quota | The request moves to the next model: Gemini 3.8 Flash, then 3.6 Flash, then 3.5 Flash-Lite. A failed model is skipped for five minutes after an outage, one minute after a rate limit, one hour after a daily quota. If all fail, or the turn passes 45 seconds, a short message says why: try again in a moment, quota spent, or service down |
+| The visitor switches tabs or the page reconnects during an answer | The question is saved first and the answer is produced off the page's script, so it appears when the page comes back |
 | The provider quota runs out | A short message names the limit. The daily cap is 80 turns |
 | A live eval score | None is committed yet |
 

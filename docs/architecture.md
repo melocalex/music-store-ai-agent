@@ -1,6 +1,6 @@
 # Architecture
 
-One Pydantic AI agent on Gemini with a fallback model, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
+One Pydantic AI agent on Gemini with a fallback and a reserve model, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
 
 ## Turn flow
 
@@ -10,7 +10,7 @@ sequenceDiagram
   actor C as Customer
   participant P as Page or CLI
   participant R as run_turn
-  participant A as Agent (primary, then fallback)
+  participant A as Agent (primary, fallback, then reserve)
   participant T as Tools
   participant L as Ledger
   participant G as Price check
@@ -34,7 +34,7 @@ sequenceDiagram
   P-->>C: masked text
 ```
 
-`run_turn` in `music_store_agent/run.py` owns the failures. A provider error the fallback did not absorb, both models failing, or a turn past 45 seconds becomes a fixed message. A turn in which the price check fired and the model never recovered becomes the safe price message and a `price_check` handoff. Any other agent failure becomes a short "please rephrase" message with no handoff.
+`run_turn` in `music_store_agent/run.py` owns the failures. A provider error the chain did not absorb, every model failing, or a turn past 45 seconds becomes a fixed message. A turn in which the price check fired and the model never recovered becomes the safe price message and a `price_check` handoff. Any other agent failure becomes a short "please rephrase" message with no handoff.
 
 ## Models
 
@@ -44,18 +44,21 @@ sequenceDiagram
 |---|---|---|
 | Primary | `MODEL` | `google:gemini-3.8-flash` |
 | Fallback | `MODEL_FALLBACK` | `google:gemini-3.6-flash` |
+| Reserve | `MODEL_RESERVE` | `google:gemini-3.5-flash-lite` |
 
-Each model in the chain is a `GuardedModel` from `failover.py`. Its request runs in a task of its own under a hard deadline, 20 seconds by default (`MODEL_TIMEOUT_SECONDS`). At the deadline the task is cancelled and left behind, never awaited, and the wrapper raises `ModelRequestTimeout`, so a socket that ignores cancellation cannot hold the turn. The same value goes to the HTTP client as its timeout for each attempt, and provider SDK retries are set to 0. An outage sends that same request to the fallback with a fresh deadline: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`. Any other error, such as a rate limit or a rejected request, is raised from the primary. When both models fail, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` answers with the provider message.
+Each model in the chain is a `GuardedModel` from `failover.py`. Its request runs in a task of its own under a hard deadline, 15 seconds by default (`MODEL_TIMEOUT_SECONDS`). At the deadline the task is cancelled and left behind, never awaited, and the wrapper raises `ModelRequestTimeout`, so a socket that ignores cancellation cannot hold the turn. The same value goes to the HTTP client as its timeout for each attempt, and provider SDK retries are set to 0. An outage or a limit sends that same request to the next model with a fresh deadline: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`, and a `ModelRateLimitError` or `ModelQuotaExceededError` for a 429. Any other error, such as a rejected request, is raised from the model that failed. When every model fails, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` reads its causes: the rate-limit message if all were limits, the quota message if all spent their day, otherwise the provider message.
 
-`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`), and the live eval runner uses the same one. Two 20-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
+`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`), and the live eval runner uses the same one. Three 15-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
 
 ### Circuit breaker
 
-The primary's `GuardedModel` holds a `CircuitBreaker`, shared by every agent the process builds for that model id. An outage on the primary records its time. For `MODEL_BREAKER_SECONDS` after it, 300 by default, the primary refuses each request at once with `PrimaryBreakerOpen`, a `ModelUnavailableError`, so `FallbackModel` moves straight to the fallback, which gets the full deadline. The first request after the window calls the primary: a success closes the breaker, and an outage starts a new window. Rate limits, quotas, and rejected requests leave it alone. The breaker is in memory and per process, behind a lock, since Streamlit runs each session on its own thread.
+The primary's and the fallback's `GuardedModel` each hold a `CircuitBreaker`, shared by every agent the process builds for that model id. A failure records its time. For `MODEL_BREAKER_SECONDS` after an outage, 300 by default, one minute after a rate limit, and one hour after a daily quota, that model refuses each request at once with `PrimaryBreakerOpen`, a `ModelUnavailableError`, so `FallbackModel` moves straight to the next one, which gets the full deadline. The first request after the window calls the model again: a success closes the breaker, and a failure starts a new window. Rejected requests leave it alone. The breaker is in memory and per process, behind a lock, since Streamlit runs each session on its own thread.
 
-The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning for the fallback that says whether the primary failed, with its error type, or was skipped by the open breaker. `failover.py` logs a warning when the breaker opens and on each skip, and an info line when it closes. The log holds model ids and error types only.
+The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning for any other model that says whether the earlier ones failed, with their error types, or were skipped by an open breaker. `failover.py` logs a warning when the breaker opens and on each skip, and an info line when it closes. The log holds model ids and error types only.
 
-A `Model` instance passed to `build_agent`, as the stub runs and the offline suite do, runs as given, without the fallback, the deadline, or the breaker.
+A `Model` instance passed to `build_agent`, as the stub runs and the offline suite do, runs as given, without the fallback, the reserve, the deadline, or the breaker.
+
+`app.py` does not run a turn on the page's script. `_submit` appends the question to the visible chat, then `jobs.start_turn` runs `run_turn` on a worker thread and keeps the job in the session. A fragment polls the job every second and appends the answer when it ends. A rerun, a reconnect, or a tab left in the background therefore never drops the question or the reply. A worker that fails, or that never answers within the turn budget plus 30 seconds, still ends in a fixed Portuguese message, and the cause is logged by type to stderr.
 
 ## Tools
 

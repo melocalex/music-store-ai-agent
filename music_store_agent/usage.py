@@ -27,6 +27,15 @@ def reserve(path: Path, day: date, limit: int) -> bool:
         return True
 
 
+def release(path: Path, day: date) -> None:
+    """Give back one turn that no model answered, so a provider failure does not use the cap."""
+    with _LOCK:
+        current = _read(path)
+        count = int(str(current.get("count", 0)))
+        if current.get("day") == day.isoformat() and count > 0:
+            _write(path, {"day": day.isoformat(), "count": count - 1})
+
+
 def _read(path: Path) -> dict[str, object]:
     if not path.exists():
         return {}
