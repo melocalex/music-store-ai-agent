@@ -8,7 +8,7 @@ license = "MIT"
 authors = [{ name = "Alexandre Melo" }]
 dependencies = [
   "pydantic>=2",
-  "pydantic-ai-slim[google]>=2.68,<3",
+  "pydantic-ai-slim[google,openai]>=2.68,<3",
   "streamlit>=1.40",
 ]
 

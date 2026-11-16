@@ -4,7 +4,7 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -213,6 +213,23 @@ def request_settings(seconds: float) -> ModelSettings:
     return ModelSettings(timeout=seconds, max_retries=PROVIDER_SDK_RETRIES)
 
 
+def model_stack(
+    models: Sequence[Model | str],
+    seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    breakers: Sequence[CircuitBreaker | None] = (),
+) -> FallbackModel:
+    """The first model answers. An outage, a missed deadline, or a limit moves that request on.
+
+    `breakers` pair with the models in order. With one, a failure also sends the next requests
+    straight past that model until its window passes. A model without one is tried every time.
+    """
+    kept = [*breakers, *[None] * (len(models) - len(breakers))]
+    guarded = [
+        GuardedModel(model, seconds, guard) for model, guard in zip(models, kept, strict=False)
+    ]
+    return FallbackModel(*guarded, fallback_on=FALLBACK_ON)
+
+
 def model_chain(
     primary: Model | str,
     fallback: Model | str,
@@ -221,16 +238,6 @@ def model_chain(
     reserve: Model | str | None = None,
     later_breakers: tuple[CircuitBreaker | None, ...] = (),
 ) -> FallbackModel:
-    """The primary answers. An outage, a missed deadline, or a limit moves that request on.
-
-    With a breaker, a failure also sends the next requests straight past that model until the
-    breaker's window passes. `later_breakers` guard the fallback, then the reserve. A model
-    without one is tried on every request.
-    """
-    chain = [primary, fallback] if reserve is None else [primary, fallback, reserve]
-    breakers = [breaker, *later_breakers]
-    breakers += [None] * (len(chain) - len(breakers))
-    models = [
-        GuardedModel(model, seconds, kept) for model, kept in zip(chain, breakers, strict=False)
-    ]
-    return FallbackModel(*models, fallback_on=FALLBACK_ON)
+    """A primary, a fallback, and an optional reserve, with their breakers in that order."""
+    models = [primary, fallback] if reserve is None else [primary, fallback, reserve]
+    return model_stack(models, seconds, [breaker, *later_breakers])

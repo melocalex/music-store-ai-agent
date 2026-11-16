@@ -6,7 +6,6 @@ call would be.
 """
 
 import asyncio
-import json
 import logging
 import threading
 import time
@@ -15,7 +14,7 @@ from datetime import date
 
 import anyio
 import httpx2
-from pydantic_ai.exceptions import ModelHTTPError, ModelUnavailableError
+from pydantic_ai.exceptions import ModelHTTPError, ModelQuotaExceededError, ModelUnavailableError
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models import override_allow_model_requests
 from pydantic_ai.models.function import FunctionModel
@@ -33,7 +32,7 @@ from music_store_agent.constants import (
 )
 from music_store_agent.db import load_database
 from music_store_agent.deps import Deps, make_deps
-from music_store_agent.failover import CircuitBreaker, model_chain, request_settings
+from music_store_agent.failover import CircuitBreaker, model_chain, model_stack, request_settings
 from music_store_agent.run import Turn, run_turn
 
 SHORT_TIMEOUT = 0.2
@@ -137,13 +136,12 @@ def _deps(tmp_path) -> Deps:
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
 
 
 async def _timed(agent, deps: Deps, release: threading.Event | None = None) -> Played:
     started = time.monotonic()
-    turn = await run_turn(agent, deps, "oi", [], 0)
+    turn = await run_turn(agent, deps, "oi", [])
     seconds = time.monotonic() - started
     if release is not None:
         release.set()  # let the abandoned read return so the event loop can close
@@ -313,14 +311,22 @@ def test_a_limit_mixed_with_an_outage_is_a_plain_provider_failure(tmp_path) -> N
     assert _play(tmp_path, chain).turn.message == PROVIDER_ERROR_MESSAGE
 
 
-def test_a_turn_no_model_answered_does_not_use_the_daily_cap(tmp_path) -> None:
-    chain = model_chain(
-        _gemini(PRIMARY, 503, UNAVAILABLE, []), _gemini(FALLBACK, 503, UNAVAILABLE, [])
+def test_a_first_model_out_of_credit_moves_the_turn_on_and_stays_skipped(tmp_path) -> None:
+    """A paid first model that has run out of credit (HTTP 402) falls through to the free ones."""
+    calls: list[str] = []
+
+    def out_of_credit(_messages, _info):
+        calls.append("paid")
+        raise ModelQuotaExceededError("paid-model", "insufficient credits", body=None)
+
+    breaker = CircuitBreaker(WINDOW, clock=FakeClock())
+    chain = model_stack(
+        [FunctionModel(out_of_credit), _answering(PRIMARY, calls)], SHORT_TIMEOUT, [breaker]
     )
-    played = _play(tmp_path, chain)
-    assert played.turn.limited
-    usage = json.loads((tmp_path / "turns.json").read_text(encoding="utf-8"))
-    assert usage["count"] == 0
+    assert _play(tmp_path / "first", chain).turn.message == "Olá."
+    assert _play(tmp_path / "second", chain).turn.message == "Olá."
+    assert calls == ["paid", PRIMARY, PRIMARY]
+    assert breaker.remaining() > WINDOW
 
 
 # Circuit breaker on the primary. A fake clock stands in for time.monotonic.

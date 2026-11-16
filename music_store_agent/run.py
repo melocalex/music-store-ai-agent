@@ -14,18 +14,13 @@ from pydantic_ai.exceptions import (
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.fallback import FallbackModel
 
-from music_store_agent.clock import real_clock
 from music_store_agent.constants import (
-    DAILY_CAP_MESSAGE,
-    DAILY_TURN_CAP,
     INPUT_TOO_LONG_MESSAGE,
     MAX_INPUT_CHARS,
     PROVIDER_ERROR_MESSAGE,
     QUOTA_DAY_MESSAGE,
     RATE_LIMIT_MESSAGE,
     SAFE_PRICE_MESSAGE,
-    SESSION_CAP_MESSAGE,
-    SESSION_TURN_CAP,
     TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_SECONDS,
 )
@@ -37,7 +32,6 @@ from music_store_agent.failover import (
 )
 from music_store_agent.guard import AgentReply, PriceQuote
 from music_store_agent.handoff import HandoffCase, follow_up, write_handoff
-from music_store_agent.usage import release, reserve
 
 _log = logging.getLogger(__name__)
 
@@ -56,16 +50,9 @@ async def run_turn(
     deps: Deps,
     message: str,
     history: list[ModelMessage],
-    session_turns: int,
-    daily_limit: int = DAILY_TURN_CAP,
 ) -> Turn:
-    if session_turns >= SESSION_TURN_CAP:
-        return Turn(SESSION_CAP_MESSAGE, (), tuple(history), limited=True)
     if len(message) > MAX_INPUT_CHARS:
         return Turn(INPUT_TOO_LONG_MESSAGE, (), tuple(history), limited=True)
-    if not reserve(deps.paths.usage, real_clock().today(), daily_limit):
-        _log.warning("daily cap of %d turns reached", daily_limit)
-        return Turn(DAILY_CAP_MESSAGE, (), tuple(history), limited=True)
     firings = deps.counters.validator_firings
     try:
         result = await agent.run(
@@ -73,20 +60,20 @@ async def run_turn(
         )
     except ModelAPIError as error:
         _log.warning("provider error: %s", error_label(error))
-        return _unanswered(deps, history, provider_message(error))
+        return _unanswered(history, provider_message(error))
     except (FallbackExceptionGroup, RunTimedOut) as error:
         # Every model failed, or the turn ran past its budget.
         _log.warning("no model answered: %s", error_label(error))
-        return _unanswered(deps, history, group_message(error))
+        return _unanswered(history, group_message(error))
     except UnexpectedModelBehavior as error:
         if deps.counters.validator_firings > firings:
             _log.warning("price check gave up: %s", error_label(error))
             return _safe_price(deps, history)
         _log.warning("turn failed: %s", error_label(error))
-        return _unanswered(deps, history, TURN_ERROR_MESSAGE)
+        return _unanswered(history, TURN_ERROR_MESSAGE)
     except Exception as error:
         _log.warning("turn crashed: %s", error_label(error))
-        return _unanswered(deps, history, TURN_ERROR_MESSAGE)
+        return _unanswered(history, TURN_ERROR_MESSAGE)
     reply = result.output
     fresh = tuple(result.new_messages())
     log_answering_model(agent, fresh)
@@ -120,9 +107,8 @@ def _attempt_text(model_name: str, error: str | None) -> str:
     return f"{model_name} failed with {error_type}"
 
 
-def _unanswered(deps: Deps, history: list[ModelMessage], message: str) -> Turn:
-    """A turn no model answered does not count against the day's cap."""
-    release(deps.paths.usage, real_clock().today())
+def _unanswered(history: list[ModelMessage], message: str) -> Turn:
+    """The visitor always gets a fixed message when no model answered."""
     return Turn(message, (), tuple(history), limited=True)
 
 

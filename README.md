@@ -7,7 +7,7 @@
   <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776AB"></a>
   <a href="https://github.com/melocalex/music-store-ai-agent/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/melocalex/music-store-ai-agent/ci.yml?label=ci"></a>
   <a href="https://ai.pydantic.dev/"><img alt="Pydantic AI 2.68" src="https://img.shields.io/badge/pydantic--ai-2.68-E92063"></a>
-  <a href="https://ai.google.dev/"><img alt="Gemini 3.8 Flash" src="https://img.shields.io/badge/gemini-3.8%20flash-8E75C2"></a>
+  <a href="https://ai.google.dev/"><img alt="Claude Haiku 5.5 and Gemini" src="https://img.shields.io/badge/claude%20haiku%205.5%20%2B%20gemini-8E75C2"></a>
   <a href="https://docs.astral.sh/ruff/"><img alt="ruff" src="https://img.shields.io/badge/lint-ruff-D7FF64"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-2F6F4E"></a>
 </p>
@@ -21,7 +21,7 @@
 |:-:|---|---|
 | **1** | git | the code, the store CSVs, and the policy PDF |
 | **2** | Python 3.12 | the app, the CLI, and the test tools |
-| **3** | nothing else | lint, format, 180 tests, and 28 scenarios through the real tools, all offline |
+| **3** | nothing else | lint, format, 181 tests, and 28 scenarios through the real tools, all offline |
 
 ```bash
 # 1. Clone
@@ -109,8 +109,8 @@ The full table is generated from the CSVs: [docs/data-quality.md](docs/data-qual
 ```mermaid
 flowchart LR
   customer([Customer]) --> page[Streamlit page or CLI]
-  page --> caps{Caps}
-  caps --> aria[Aria: Pydantic AI and Gemini]
+  page --> size{Input size}
+  size --> aria[Aria: Pydantic AI, Claude Haiku via OpenRouter, Gemini as backup]
   aria <--> tools[Ten typed tools]
   tools --> db[(SQLite, loaded once from the CSVs)]
   tools --> manual[Manual sections]
@@ -158,9 +158,9 @@ music-store-ai-agent/
 | A percent written in words, as in "cinco por cento" | The percent check reads digits only |
 | Carnival or Corpus Christi | The dates are computed from Easter and flagged, but the store has no set hours for them, so Aria does not confirm hours and hands off. Good Friday is closed |
 | Freight to another city | Not calculated. The team quotes it |
-| A model is down, past 15 seconds, or at its rate limit or daily quota | The request moves to the next model: Gemini 3.8 Flash, then 3.6 Flash, then 3.5 Flash-Lite. A failed model is skipped for five minutes after an outage, one minute after a rate limit, one hour after a daily quota. If all fail, or the turn passes 45 seconds, a short message says why: try again in a moment, quota spent, or service down |
+| A model is down, past 10 seconds, or at its rate limit or out of credit | The request moves to the next model: Claude Haiku 5.5 on OpenRouter, then Gemini 3.8 Flash, 3.6 Flash and 3.5 Flash-Lite. A failed model is skipped for five minutes after an outage, one minute after a rate limit, one hour after a spent quota. If all fail, or the turn passes 45 seconds, a short message says why |
 | The visitor switches tabs or the page reconnects during an answer | The question is saved first and the answer is produced off the page's script, so it appears when the page comes back |
-| The provider quota runs out | A short message names the limit. The daily cap is 80 turns |
+| Every model is down or at its limit | A short message says which: try again in a moment, quota spent, or service down |
 | A live eval score | None is committed yet |
 
 ## 🗺️ Roadmap
@@ -182,7 +182,7 @@ Built with Cursor and Claude Code as development tools.
 
 | Page | Covers |
 |---|---|
-| [Setup](docs/setup.md) | local install, model key, primary and fallback models, timeouts, the breaker, the CLI and the page, hosting, caps and rate limits |
+| [Setup](docs/setup.md) | local install, model key, primary and fallback models, timeouts, the breaker, the CLI and the page, hosting, limits and timeouts |
 | [Architecture](docs/architecture.md) | the ten tools, the turn flow, the ledger, the clock, and the modules |
 | [Guardrails](docs/guardrails.md) | every rule, its source, and the conflicts in the manual |
 | [Data quality](docs/data-quality.md) | the report generated from the CSVs |

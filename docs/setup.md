@@ -28,7 +28,7 @@ python -m music_store_agent --stub   # the terminal chat with a canned greeting
 
 ## Model key and models
 
-A live answer needs a Gemini API key. The app reads it from `GOOGLE_API_KEY`.
+A live answer needs a model key: `OPENROUTER_API_KEY` for the first model, `GOOGLE_API_KEY` for the Gemini models behind it, or both. With only one of them, the models of the other are left out.
 
 1. Open [Google AI Studio](https://aistudio.google.com/apikey) and create an API key for a Google Cloud project.
 2. For anything public, use a project with billing and a budget alert. The free tier allows only a small number of requests per day, and Google may use free-tier prompts to improve its products. Check the current limits on the [Gemini API rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) page.
@@ -36,10 +36,12 @@ A live answer needs a Gemini API key. The app reads it from `GOOGLE_API_KEY`.
 
 | Variable | Default | Sets |
 |---|---|---|
-| `MODEL` | `google:gemini-3.8-flash` | the primary model |
+| `OPENROUTER_API_KEY` | none | optional. With it, OpenRouter answers first and the Gemini models are the backup. Without it, OpenRouter is skipped |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | the OpenRouter model slug |
+| `MODEL` | `google:gemini-3.8-flash` | the first Gemini model |
 | `MODEL_FALLBACK` | `google:gemini-3.6-flash` | the backup model |
 | `MODEL_RESERVE` | `google:gemini-3.5-flash-lite` | the last model, a lite one with a larger daily allowance |
-| `MODEL_TIMEOUT_SECONDS` | `15` | seconds each model gets for one request, above 0 and at most 15 |
+| `MODEL_TIMEOUT_SECONDS` | `10` | seconds each model gets for one request, above 0 and at most 11.25 |
 | `MODEL_BREAKER_SECONDS` | `300` | seconds a model is skipped after an outage, 0 or more. `0` turns the breaker off |
 
 The model variables take any Pydantic AI id with the `google:` prefix. A cheaper choice is `google:gemini-3.5-flash-lite`. An id with another prefix, such as the old `google-gla:`, or a timeout or breaker window outside its range, stops the app at startup with a message, before any customer question.
@@ -50,11 +52,11 @@ Every model request goes to the primary first, unless the breaker described belo
 
 The timeout is enforced twice. The HTTP client gets it as its timeout for each attempt, and each request also runs under a hard deadline: when `MODEL_TIMEOUT_SECONDS` pass, the app stops waiting, cancels the request, and leaves it behind instead of waiting for it to wind down. A socket that ignores the cancel therefore cannot hold the turn. The miss counts as a timeout, so the fallback runs.
 
-After an outage, a circuit breaker skips that model for `MODEL_BREAKER_SECONDS`, five minutes by default. After a per-minute rate limit it skips the model for one minute, and after a daily quota for one hour. While it is open, every request goes straight to the next model, which then has the full 15 seconds and the full turn budget. That includes the later tool rounds of the same turn and other visitors' turns. After the window, the next request tries the primary again: a success closes the breaker, and another outage starts a new window. A rejected request never opens it. The breaker lives in memory, so a restart closes it, and each process (the hosted page, a terminal chat, an eval run) has its own.
+After an outage, a circuit breaker skips that model for `MODEL_BREAKER_SECONDS`, five minutes by default. After a per-minute rate limit it skips the model for one minute, and after a daily quota for one hour. While it is open, every request goes straight to the next model, which then has the full 10 seconds and the full turn budget. That includes the later tool rounds of the same turn and other visitors' turns. After the window, the next request tries the primary again: a success closes the breaker, and another outage starts a new window. A rejected request never opens it. The breaker lives in memory, so a restart closes it, and each process (the hosted page, a terminal chat, an eval run) has its own.
 
-The provider SDK does not retry by itself, so moving to the next model is the only retry. The whole turn, tool rounds and price-check retries included, stops after 45 seconds (`TURN_TIMEOUT_SECONDS`). Three 15-second attempts fit inside that budget, which is why the timeout cannot go above 15. If every model fails, or the turn runs out of time, the customer gets a fixed message: the rate-limit one if every model hit a limit, the quota one if every model spent its day, otherwise the provider one.
+The provider SDK does not retry by itself, so moving to the next model is the only retry. The whole turn, tool rounds and price-check retries included, stops after 45 seconds (`TURN_TIMEOUT_SECONDS`). Four 10-second attempts fit inside that budget, which is why the timeout cannot go above 11.25. If every model fails, or the turn runs out of time, the customer gets a fixed message: the rate-limit one if every model hit a limit, the quota one if every model spent its day, otherwise the provider one.
 
-When the fallback answers, the app logs a warning such as `fallback model google:gemini-3.6-flash answered after gemini-3.8-flash failed with ModelUnavailableError`. Opening the breaker and each skip also log a warning, such as `model google:gemini-3.8-flash skipped: breaker open for 287 more seconds`. Every failure also logs one warning with its type, HTTP status, and model, such as `provider error: ModelAuthenticationError status=401 model=gemini-3.8-flash` for a bad key, `turn failed: UnexpectedModelBehavior` for a reply that broke the schema, and `daily cap of 80 turns reached`. These lines go to stderr: the terminal for the CLI, the server log for the page. Answers from the primary are logged at info level, which shows only when logging is set to info. The log holds model ids and error types, never the key or the provider's response body.
+When the fallback answers, the app logs a warning such as `fallback model google:gemini-3.6-flash answered after gemini-3.8-flash failed with ModelUnavailableError`. Opening the breaker and each skip also log a warning, such as `model google:gemini-3.8-flash skipped: breaker open for 287 more seconds`. Every failure also logs one warning with its type, HTTP status, and model, such as `provider error: ModelAuthenticationError status=401 model=gemini-3.8-flash` for a bad key, `turn failed: UnexpectedModelBehavior` for a reply that broke the schema. These lines go to stderr: the terminal for the CLI, the server log for the page. Answers from the primary are logged at info level, which shows only when logging is set to info. The log holds model ids and error types, never the key or the provider's response body.
 
 `.env.example` lists every variable:
 
@@ -92,8 +94,6 @@ Business rules read a store clock in `America/Campo_Grande`.
 | Fixed | `--today` or `MUSIC_STORE_TODAY=YYYY-MM-DD` | data definida pelo operador |
 | Real | `--real-clock` or `MUSIC_STORE_CLOCK=real` | relógio real |
 
-The daily cap always counts on the real local date, whatever the mode.
-
 `MUSIC_STORE_DATA` points the loader at another folder with the same six CSVs.
 
 ## Host the page
@@ -106,22 +106,20 @@ Streamlit Community Cloud runs `app.py` with `requirements.txt`.
 
 The key stays on the server. The page has no key field. Without a key it says that the site is not configured yet. `.streamlit/config.toml` hides error details from visitors. A Community Cloud app sleeps after a while without visits and wakes on the next one.
 
-## Caps and rate limits
+## Limits and timeouts
 
 | Limit | Value | Where |
 |---|---|---|
-| Turns per conversation | 30 | `SESSION_TURN_CAP` |
-| Turns per day, all visitors together | 80, on the real local date | `DAILY_TURN_CAP`, counted in `var/daily_turns.json` |
 | Characters per message | 600 | `MAX_INPUT_CHARS` |
 | Retries of a reply that fails the price check | 2 | `OUTPUT_RETRIES` |
 | Retries of a tool call with bad arguments | 1 | `TOOL_RETRIES` |
-| Seconds per model request, HTTP timeout and hard deadline | 15 | `MODEL_TIMEOUT_SECONDS`, default `DEFAULT_REQUEST_TIMEOUT_SECONDS` |
+| Seconds per model request, HTTP timeout and hard deadline | 10 | `MODEL_TIMEOUT_SECONDS`, default `DEFAULT_REQUEST_TIMEOUT_SECONDS` |
 | Seconds per turn | 45 | `TURN_TIMEOUT_SECONDS` |
 | Provider SDK retries | 0 | `PROVIDER_SDK_RETRIES`. The next model is the only retry |
 | Seconds a model is skipped after an outage | 300 | `MODEL_BREAKER_SECONDS`, default `DEFAULT_BREAKER_SECONDS` |
 | Seconds a model is skipped after a rate limit, or a daily quota | 60, or 3600 | `RATE_LIMIT_BREAKER_SECONDS`, `QUOTA_BREAKER_SECONDS` |
 
-When the provider refuses, the customer gets a fixed message: one for the daily quota, one for the rate limit, and one for any other provider error the fallback could not absorb or a turn past 45 seconds. None of them shows a stack trace. Size `DAILY_TURN_CAP` to the budget of the key: a turn takes one model request per round of tool calls, plus one for the reply, plus any retry, and a request that falls over costs one request on each model it tries. A turn that no model answered is given back to the daily cap. A free key allows only about 20 requests a day on each flash model, so the lite reserve carries the rest of the day, and a project with billing removes the limit. While the breaker is open, a request costs one on the fallback only.
+When the provider refuses, the customer gets a fixed message: one for a spent quota, one for the rate limit, and one for any other provider error the fallback could not absorb or a turn past 45 seconds. None of them shows a stack trace. Mind the budget of the keys: a turn takes one model request per round of tool calls, plus one for the reply, plus any retry, and a request that falls over costs one request on each model it tries. A free Gemini key allows only about 20 requests a day on each flash model, so the OpenRouter model, which has its own spending limit, carries the traffic and the lite reserve the rest. While the breaker is open, a request costs one on the fallback only.
 
 ## Live runs
 
@@ -136,4 +134,4 @@ Both outputs are meant to be committed. See [evals.md](evals.md) for flags and r
 
 ## Local files
 
-The app writes two gitignored files under `var/` and nothing else: `handoffs.jsonl`, the handoff log, and `daily_turns.json`, the daily counter. Neither holds an email or a phone.
+The app writes one gitignored file under `var/` and nothing else: `handoffs.jsonl`, the handoff log. It holds no email or phone.

@@ -18,14 +18,20 @@ DEFAULT_MODEL = f"{MODEL_PROVIDER}:gemini-3.8-flash"
 MODEL_ENV = "MODEL"
 DEFAULT_FALLBACK_MODEL = f"{MODEL_PROVIDER}:gemini-3.6-flash"
 MODEL_FALLBACK_ENV = "MODEL_FALLBACK"
+# OpenRouter goes first when its key is set. Without the key the Gemini models below answer.
+OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
+OPENROUTER_MODEL_ENV = "OPENROUTER_MODEL"
+DEFAULT_OPENROUTER_MODEL = "anthropic/claude-haiku-5.5"
+OPENROUTER_APP_URL = "https://aria-music-store.streamlit.app/"
+OPENROUTER_APP_TITLE = "Aria"
 # The reserve is a lite model: the flash models allow few requests a day on a free key.
 DEFAULT_RESERVE_MODEL = f"{MODEL_PROVIDER}:gemini-3.5-flash-lite"
 MODEL_RESERVE_ENV = "MODEL_RESERVE"
 MODEL_TIMEOUT_ENV = "MODEL_TIMEOUT_SECONDS"
 # One request gets one attempt on each model in turn, each under the timeout.
 # Both must fit in one turn, and no provider SDK retry is stacked on top.
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 15.0
-MODEL_ATTEMPTS_PER_REQUEST = 3
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
+MODEL_ATTEMPTS_PER_REQUEST = 4
 PROVIDER_SDK_RETRIES = 0
 TURN_TIMEOUT_SECONDS = 45.0
 # After a primary outage, requests skip the primary for this long, then try it again.
@@ -74,9 +80,7 @@ SEARCH_ROW_CAP = 5
 SIMILAR_CAP = 3
 CATALOG_FETCH_LIMIT = 500
 ORDER_ITEMS_LIMIT = 50
-SESSION_TURN_CAP = 30
 MAX_INPUT_CHARS = 600
-DAILY_TURN_CAP = 80
 HANDOFF_SUMMARY_CAP = 400
 PROTOCOL_LENGTH = 8
 OUTPUT_RETRIES = 2
@@ -173,11 +177,6 @@ PROVIDER_ERROR_MESSAGE = (
 TURN_ERROR_MESSAGE = "Não consegui montar essa resposta. Pode reformular a pergunta?"
 INPUT_TOO_LONG_MESSAGE = (
     f"A mensagem passou de {MAX_INPUT_CHARS} caracteres. Pode resumir em uma pergunta?"
-)
-SESSION_CAP_MESSAGE = "Cheguei ao limite de mensagens desta conversa. Abra uma conversa nova."
-DAILY_CAP_MESSAGE = (
-    "O limite de atendimento de hoje foi atingido. "
-    f"Volte amanhã ou fale no WhatsApp {WHATSAPP_PHONE}."
 )
 RETRY_PRICE = (
     "Há valor sem fonte ou ligado ao produto errado. "

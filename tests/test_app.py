@@ -32,7 +32,6 @@ def _page(tmp_path, respond) -> AppTest:
         load_database(),
         today=date(2026, 3, 23),
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
     return page
 

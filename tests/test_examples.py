@@ -44,7 +44,6 @@ def test_a_provider_error_stops_the_script(tmp_path) -> None:
         load_database(),
         today=DAY,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
     agent = build_agent(FunctionModel(_unavailable))
     with pytest.raises(GenerationStopped):

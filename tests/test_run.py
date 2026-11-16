@@ -20,7 +20,6 @@ from music_store_agent.constants import (
     PROVIDER_ERROR_MESSAGE,
     QUOTA_DAY_MESSAGE,
     RATE_LIMIT_MESSAGE,
-    SESSION_TURN_CAP,
     TURN_ERROR_MESSAGE,
 )
 from music_store_agent.db import load_database
@@ -36,7 +35,6 @@ def _deps(tmp_path):
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
 
 
@@ -47,9 +45,9 @@ def _raises(status: int, body: object = None):
     return respond
 
 
-def _turn(tmp_path, respond, text: str = "oi", turns: int = 0):
+def _turn(tmp_path, respond, text: str = "oi"):
     deps = _deps(tmp_path)
-    turn = asyncio.run(run_turn(build_agent(FunctionModel(respond)), deps, text, [], turns))
+    turn = asyncio.run(run_turn(build_agent(FunctionModel(respond)), deps, text, []))
     return turn, deps
 
 
@@ -83,10 +81,10 @@ def _final(_messages, _info):
     return ModelResponse(parts=[ToolCallPart(tool_name="final_result", args=args)])
 
 
-def test_the_last_turn_below_the_cap_still_runs_and_long_input_does_not(tmp_path) -> None:
-    last, _ = _turn(tmp_path / "last", _final, turns=SESSION_TURN_CAP - 1)
-    assert last.message == "Olá."
-    assert not last.limited
+def test_a_normal_turn_runs_and_long_input_does_not(tmp_path) -> None:
+    normal, _ = _turn(tmp_path / "normal", _final)
+    assert normal.message == "Olá."
+    assert not normal.limited
     long_text = "a" * (MAX_INPUT_CHARS + 1)
     refused, _ = _turn(tmp_path / "long", _final, text=long_text)
     assert refused.message == INPUT_TOO_LONG_MESSAGE
@@ -126,7 +124,7 @@ def test_each_failure_logs_its_type_and_status_without_the_body(tmp_path, caplog
         schema, _ = _turn(tmp_path / "schema", _plain_text)
         deps = _deps(tmp_path / "both")
         chain = model_chain(FunctionModel(_down), FunctionModel(_down))
-        both = asyncio.run(run_turn(build_agent(chain), deps, "oi", [], 0))
+        both = asyncio.run(run_turn(build_agent(chain), deps, "oi", []))
     assert key.message == PROVIDER_ERROR_MESSAGE
     assert schema.message == TURN_ERROR_MESSAGE
     assert both.message == PROVIDER_ERROR_MESSAGE

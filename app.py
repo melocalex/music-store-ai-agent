@@ -12,6 +12,7 @@ from music_store_agent.clock import weekday_name
 from music_store_agent.constants import (
     ASSISTANT_NAME,
     MAX_INPUT_CHARS,
+    OPENROUTER_KEY_ENV,
     SAMPLE_QUESTIONS,
     STORE_NAME,
 )
@@ -32,13 +33,24 @@ WORKING = "Consultando catálogo, pedidos e regras..."
 _HIDDEN_TOOLS = frozenset({"final_result"})
 
 
-def host_key() -> str | None:
-    secret = ""
+def _secret(name: str) -> str | None:
+    """A key from the host's Streamlit secrets, else the environment."""
+    value = ""
     try:
-        secret = str(st.secrets.get("GOOGLE_API_KEY", "") or "")
+        value = str(st.secrets.get(name, "") or "")
     except (FileNotFoundError, AttributeError, KeyError):
-        secret = ""
-    return secret or os.environ.get("GOOGLE_API_KEY") or None
+        value = ""
+    return value.strip() or os.environ.get(name, "").strip() or None
+
+
+def host_key() -> str | None:
+    """The Gemini key, or None."""
+    return _secret("GOOGLE_API_KEY")
+
+
+def has_model_key() -> bool:
+    """True when the host set a Gemini key or an OpenRouter key."""
+    return bool(host_key() or _secret(OPENROUTER_KEY_ENV))
 
 
 def safe_markdown(text: str) -> str:
@@ -73,7 +85,7 @@ def main() -> None:
     st.title(ASSISTANT_NAME)
     st.caption(f"Assistente virtual da {STORE_NAME}. {DISCLAIMER}")
     _sidebar()
-    if not host_key():
+    if not has_model_key():
         st.warning("O responsável pelo site ainda não configurou a chave do modelo.")
         return
     _history()
@@ -90,12 +102,14 @@ def main() -> None:
 def _ensure_session() -> None:
     if "deps" in st.session_state:
         return
-    os.environ.setdefault("GOOGLE_API_KEY", host_key() or "")
-    # Both Gemini models are built with the key, so without one there is no agent yet.
-    st.session_state.agent = build_agent() if host_key() else None
+    for name in ("GOOGLE_API_KEY", OPENROUTER_KEY_ENV):
+        value = _secret(name)
+        if value:
+            os.environ.setdefault(name, value)
+    # Without any key there is no agent yet, and the page says so.
+    st.session_state.agent = build_agent() if has_model_key() else None
     st.session_state.deps = make_deps(load_database())
     st.session_state.history = []
-    st.session_state.turns = 0
     st.session_state.chat = []
     st.session_state.job = None
 
@@ -131,7 +145,6 @@ def _submit(prompt: str) -> None:
         st.session_state.deps,
         prompt,
         list(st.session_state.history),
-        st.session_state.turns,
     )
     st.rerun()
 
@@ -153,7 +166,6 @@ def _pending() -> None:
 def _finish(job: TurnJob) -> None:
     turn = job.result()
     st.session_state.history = list(turn.history)
-    st.session_state.turns += 1
     quotes = [f"valor {quote.product_id} {quote.amount}" for quote in turn.quotes]
     st.session_state.chat.append({
         "role": "assistant",

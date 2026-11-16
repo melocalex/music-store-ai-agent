@@ -12,11 +12,11 @@ from pydantic_ai.models import infer_model
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.test import TestModel
 
 from music_store_agent.agent import (
     _invented,
     _money,
+    _openrouter_model,
     breaker_window,
     build_agent,
     fallback_model_id,
@@ -24,10 +24,10 @@ from music_store_agent.agent import (
     request_timeout,
 )
 from music_store_agent.constants import (
-    DAILY_CAP_MESSAGE,
     DEFAULT_BREAKER_SECONDS,
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
+    DEFAULT_OPENROUTER_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_RESERVE_MODEL,
     MODEL_ATTEMPTS_PER_REQUEST,
@@ -37,11 +37,11 @@ from music_store_agent.constants import (
     MODEL_PROVIDER,
     MODEL_RESERVE_ENV,
     MODEL_TIMEOUT_ENV,
+    OPENROUTER_APP_TITLE,
+    OPENROUTER_APP_URL,
     OUTPUT_RETRIES,
     PROVIDER_SDK_RETRIES,
     SAFE_PRICE_MESSAGE,
-    SESSION_CAP_MESSAGE,
-    SESSION_TURN_CAP,
     TURN_TIMEOUT_SECONDS,
     WHATSAPP_PHONE,
 )
@@ -112,8 +112,13 @@ def test_primary_and_fallback_fit_in_one_turn(monkeypatch) -> None:
         monkeypatch.delenv(name, raising=False)
     chain = build_agent().model
     assert isinstance(chain, FallbackModel)
-    assert len(chain.models) == MODEL_ATTEMPTS_PER_REQUEST
+    assert len(chain.models) == MODEL_ATTEMPTS_PER_REQUEST - 1
     assert sum(model.seconds for model in chain.models) <= TURN_TIMEOUT_SECONDS
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    with_openrouter = build_agent().model
+    assert isinstance(with_openrouter, FallbackModel)
+    assert len(with_openrouter.models) == MODEL_ATTEMPTS_PER_REQUEST
+    assert sum(model.seconds for model in with_openrouter.models) <= TURN_TIMEOUT_SECONDS
 
 
 def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkeypatch) -> None:
@@ -121,7 +126,7 @@ def test_request_timeout_reads_its_variable_and_refuses_what_does_not_fit(monkey
     assert request_timeout() == DEFAULT_REQUEST_TIMEOUT_SECONDS
     ceiling = TURN_TIMEOUT_SECONDS / MODEL_ATTEMPTS_PER_REQUEST
     assert request_timeout(f"{ceiling}") == ceiling
-    assert request_timeout(" 12.5 ") == 12.5
+    assert request_timeout(" 8.5 ") == 8.5
     for wrong in ("0", "-1", "abc", "nan", "inf", f"{ceiling + 0.5}"):
         with pytest.raises(ValueError, match=MODEL_TIMEOUT_ENV):
             request_timeout(wrong)
@@ -199,10 +204,9 @@ def test_the_refused_installments_reply_reaches_the_customer(tmp_path) -> None:
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
     agent = build_agent(FunctionModel(_ten_installments))
-    turn = asyncio.run(run_turn(agent, deps, "O C40 em 10x fica quanto?", [], 0))
+    turn = asyncio.run(run_turn(agent, deps, "O C40 em 10x fica quanto?", []))
     assert turn.message.startswith("Em 10x não dá: a parcela mínima")
     assert deps.counters.validator_firings == 0
     assert not deps.paths.handoff.exists()
@@ -217,7 +221,6 @@ def test_function_model_grounds_the_c40_price(tmp_path) -> None:
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
     result = asyncio.run(build_agent(FunctionModel(_c40)).run("Qual o preço do C40?", deps=deps))
     assert "599,90" in result.output.message
@@ -229,10 +232,9 @@ def test_ungrounded_price_falls_back_without_the_amount(tmp_path) -> None:
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
     agent = build_agent(FunctionModel(_ungrounded))
-    turn = asyncio.run(run_turn(agent, deps, "desconto", [], 0))
+    turn = asyncio.run(run_turn(agent, deps, "desconto", []))
     assert turn.message == f"{SAFE_PRICE_MESSAGE} {follow_up(None, deps.protocol)}"
     assert WHATSAPP_PHONE in turn.message and deps.protocol in turn.message
     assert "10,00" not in turn.message
@@ -245,10 +247,10 @@ def test_ungrounded_price_falls_back_without_the_amount(tmp_path) -> None:
 def test_an_invented_price_counts_one_catch_per_turn_across_retries(tmp_path) -> None:
     deps = _deps(tmp_path)
     agent = build_agent(FunctionModel(_ungrounded))
-    asyncio.run(run_turn(agent, deps, "desconto", [], 0))
+    asyncio.run(run_turn(agent, deps, "desconto", []))
     assert deps.counters.validator_firings == OUTPUT_RETRIES + 1
     assert deps.counters.validator_catches == 1
-    asyncio.run(run_turn(agent, deps, "e agora?", [], 1))
+    asyncio.run(run_turn(agent, deps, "e agora?", []))
     assert deps.counters.validator_catches == 2
 
 
@@ -298,34 +300,11 @@ def test_a_handoff_tells_the_visitor_how_the_team_will_reply(tmp_path) -> None:
     assert follow_up(7, customer.protocol) == "A equipe fala com você pelo contato do pedido 7."
 
 
-def test_session_cap_does_not_call_the_model(tmp_path) -> None:
-    deps = _deps(tmp_path)
-
-    def explode(_messages, _info):
-        raise AssertionError("the model should not run")
-
-    agent = build_agent(FunctionModel(explode))
-    turn = asyncio.run(run_turn(agent, deps, "oi", [], SESSION_TURN_CAP))
-    assert turn.message == SESSION_CAP_MESSAGE
-    assert turn.limited
-
-
-def test_daily_cap_uses_the_real_local_day(tmp_path) -> None:
-    deps = _deps(tmp_path)
-    stub = TestModel(call_tools=[], custom_output_args={"message": "Olá.", "quotes": []})
-    agent = build_agent(stub)
-    first = asyncio.run(run_turn(agent, deps, "oi", [], 0, daily_limit=1))
-    second = asyncio.run(run_turn(agent, deps, "de novo", [], 1, daily_limit=1))
-    assert first.message == "Olá."
-    assert second.message == DAILY_CAP_MESSAGE
-
-
 def _deps(tmp_path):
     return make_deps(
         load_database(),
         today=PINNED,
         handoff_path=tmp_path / "handoffs.jsonl",
-        usage_path=tmp_path / "turns.json",
     )
 
 
@@ -343,7 +322,7 @@ def _crossed(messages, _info):
 
 def test_a_known_price_on_the_wrong_product_fires_without_a_catch(tmp_path) -> None:
     deps = _deps(tmp_path)
-    turn = asyncio.run(run_turn(build_agent(FunctionModel(_crossed)), deps, "C40?", [], 0))
+    turn = asyncio.run(run_turn(build_agent(FunctionModel(_crossed)), deps, "C40?", []))
     assert turn.message.startswith(SAFE_PRICE_MESSAGE)
     assert deps.counters.validator_firings >= 1
     assert deps.counters.validator_catches == 0
@@ -408,3 +387,47 @@ def test_a_rules_question_writes_no_handoff_and_a_request_does(tmp_path) -> None
     request = _deps(tmp_path / "request")
     asyncio.run(build_agent(FunctionModel(_after_sales(True))).run("quero trocar", deps=request))
     assert "return_request" in request.paths.handoff.read_text(encoding="utf-8")
+
+
+def test_without_an_openrouter_key_openrouter_is_skipped(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    ids = [model.model_id for model in build_agent().model.models]
+    assert not any(known.startswith("openrouter:") for known in ids)
+
+
+def test_an_openrouter_key_puts_openrouter_first_with_its_own_breaker(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "vendor/some-model")
+    chain = build_agent().model
+    first, *rest = chain.models
+    assert first.model_id == "openrouter:vendor/some-model"
+    assert [model.model_id for model in rest] == [
+        DEFAULT_MODEL,
+        DEFAULT_FALLBACK_MODEL,
+        DEFAULT_RESERVE_MODEL,
+    ]
+    assert first.breaker is not None
+    assert rest[-1].breaker is None
+
+
+def test_an_explicit_gemini_id_never_goes_through_openrouter(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "placeholder-not-a-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    chain = build_agent(DEFAULT_MODEL).model
+    assert not any(model.model_id.startswith("openrouter:") for model in chain.models)
+
+
+def test_openrouter_sends_the_app_url_and_title(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    client = _openrouter_model("vendor/some-model").client
+    headers = {key.lower(): value for key, value in client.default_headers.items()}
+    assert headers["http-referer"] == OPENROUTER_APP_URL
+    assert headers["x-title"] == OPENROUTER_APP_TITLE
+
+
+def test_openrouter_alone_needs_no_gemini_key(monkeypatch) -> None:
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-key")
+    chain = build_agent().model
+    assert [model.model_id for model in chain.models] == [f"openrouter:{DEFAULT_OPENROUTER_MODEL}"]

@@ -61,9 +61,8 @@ async def _chat(args: argparse.Namespace) -> None:
     print(f"Data de referência: {deps.clock.today().isoformat()} ({deps.clock.label})")
     agent = build_agent(_stub_model() if args.stub else None)
     history: list[ModelMessage] = []
-    turns = 0
     if args.once is not None:
-        await _print_turn(agent, deps, args.once, history, turns)
+        await _print_turn(agent, deps, args.once, history)
         return
     while True:
         try:
@@ -72,8 +71,7 @@ async def _chat(args: argparse.Namespace) -> None:
             return
         if not text or text.casefold() in {"sair", "exit", "quit"}:
             return
-        history = await _print_turn(agent, deps, text, history, turns)
-        turns += 1
+        history = await _print_turn(agent, deps, text, history)
 
 
 async def _print_turn(
@@ -81,9 +79,8 @@ async def _print_turn(
     deps,
     text: str,
     history: list[ModelMessage],
-    turns: int,
 ) -> list[ModelMessage]:
-    turn = await run_turn(agent, deps, text, history, turns)
+    turn = await run_turn(agent, deps, text, history)
     print(f"{ASSISTANT_NAME}: {mask_pii(turn.message)}")
     for quote in turn.quotes:
         label = "regra" if quote.product_id is None else f"produto {quote.product_id}"

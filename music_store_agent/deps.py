@@ -17,7 +17,6 @@ from music_store_agent.orders import Identity
 @dataclass(frozen=True)
 class StorePaths:
     handoff: Path
-    usage: Path
 
 
 @dataclass
@@ -52,12 +51,10 @@ def make_deps(
     real: bool = False,
     phone: str | None = None,
     handoff_path: Path | None = None,
-    usage_path: Path | None = None,
 ) -> Deps:
     root = Path("var")
     handoff = handoff_path or root / "handoffs.jsonl"
-    usage = usage_path or root / "daily_turns.json"
-    paths = StorePaths(handoff, usage)
+    paths = StorePaths(handoff)
     identity = Identity(sender_phone=phone)
     clock = build_clock(conn, today=today, real=real)
     return Deps(conn, clock, Ledger(), paths, identity, Counters())

@@ -14,7 +14,6 @@ from evals.stamp import git_commit
 from music_store_agent.agent import build_agent, model_id
 from music_store_agent.clock import pinned_day
 from music_store_agent.constants import (
-    DAILY_CAP_MESSAGE,
     PROVIDER_ERROR_MESSAGE,
     QUOTA_DAY_MESSAGE,
     RATE_LIMIT_MESSAGE,
@@ -30,7 +29,6 @@ _STOPPERS = frozenset({
     PROVIDER_ERROR_MESSAGE,
     QUOTA_DAY_MESSAGE,
     RATE_LIMIT_MESSAGE,
-    DAILY_CAP_MESSAGE,
 })
 
 SCRIPTS = (
@@ -109,7 +107,6 @@ async def _write_all(model: str) -> list[Path]:
                 conn,
                 today=day,
                 handoff_path=Path(scratch) / "handoffs.jsonl",
-                usage_path=Path(scratch) / "turns.json",
             )
             text = await _script(agent, deps, script, (model, day, commit))
             path = OUT_DIR / f"{script['title']}.md"
@@ -126,7 +123,7 @@ async def _script(agent, deps, script: dict[str, object], header: tuple[str, dat
     if not isinstance(prompts, tuple):
         raise TypeError("prompts must be a tuple")
     for index, prompt in enumerate(prompts):
-        turn = await run_turn(agent, deps, prompt, history, index)
+        turn = await run_turn(agent, deps, prompt, history)
         if turn.message in _STOPPERS:
             raise GenerationStopped(f"{script['title']}, turn {index + 1}: {turn.message}")
         history = list(turn.history)

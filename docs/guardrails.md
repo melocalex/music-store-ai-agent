@@ -102,8 +102,6 @@ A rule can be explained. A purchase, cancellation, address change, return, compl
 
 | Situation | What the customer sees |
 |---|---|
-| 30 turns in one conversation | a message to start a new one |
-| 80 turns in one day, all visitors | a message to come back tomorrow or use WhatsApp |
 | More than 600 characters | a request to shorten the message |
 | Provider quota or rate limit | a message naming the limit, with no promise of a minute |
 | Any other provider error | a generic message, never a stack trace |

@@ -10,7 +10,6 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 
 from music_store_agent.constants import (
-    DAILY_TURN_CAP,
     PROVIDER_ERROR_MESSAGE,
     TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_SECONDS,
@@ -57,11 +56,9 @@ def start_turn(
     deps: Deps,
     prompt: str,
     history: list[ModelMessage],
-    session_turns: int,
-    daily_limit: int = DAILY_TURN_CAP,
 ) -> TurnJob:
     kept = tuple(history)
-    future = _POOL.submit(_work, agent, deps, prompt, list(kept), session_turns, daily_limit)
+    future = _POOL.submit(_work, agent, deps, prompt, list(kept))
     return TurnJob(prompt, kept, future)
 
 
@@ -70,12 +67,10 @@ def _work(
     deps: Deps,
     prompt: str,
     history: list[ModelMessage],
-    session_turns: int,
-    daily_limit: int,
 ) -> Turn:
     """Never raises: any failure is logged by type and becomes a fixed message."""
     try:
-        return asyncio.run(run_turn(agent, deps, prompt, history, session_turns, daily_limit))
+        return asyncio.run(run_turn(agent, deps, prompt, history))
     except Exception as error:
         _log.warning("turn crashed: %s", error_label(error))
         return Turn(TURN_ERROR_MESSAGE, (), tuple(history), limited=True)

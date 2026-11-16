@@ -144,7 +144,6 @@ async def _case(case: dict[str, Any], *, stub: bool, model: str | None) -> CaseR
             conn,
             today=pinned_day(last_order_date(conn)),
             handoff_path=Path(scratch) / "handoffs.jsonl",
-            usage_path=Path(scratch) / "turns.json",
         )
         agent = build_agent(_stub_model(case, deps) if stub else model)
         return await _play(case, agent, deps)

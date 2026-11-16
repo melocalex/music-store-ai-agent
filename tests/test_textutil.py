@@ -5,7 +5,6 @@ from decimal import Decimal
 import pytest
 
 from music_store_agent.constants import (
-    DAILY_CAP_MESSAGE,
     LANDLINE_PHONE,
     PROVIDER_ERROR_MESSAGE,
     QUOTA_DAY_MESSAGE,
@@ -170,8 +169,7 @@ def test_store_messages_survive_masking_with_every_store_contact() -> None:
         PROVIDER_ERROR_MESSAGE,
         QUOTA_DAY_MESSAGE,
         RATE_LIMIT_MESSAGE,
-        DAILY_CAP_MESSAGE,
-    ):
+        ):
         assert mask_pii(message) == message
     contacts = f"WhatsApp {WHATSAPP_PHONE}, fixo {LANDLINE_PHONE}, e-mail {STORE_EMAIL}."
     assert mask_pii(contacts) == contacts

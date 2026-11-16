@@ -25,6 +25,7 @@ from music_store_agent.constants import (
     DEFAULT_BREAKER_SECONDS,
     DEFAULT_FALLBACK_MODEL,
     DEFAULT_MODEL,
+    DEFAULT_OPENROUTER_MODEL,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_RESERVE_MODEL,
     DESTINATION_CITY,
@@ -35,6 +36,10 @@ from music_store_agent.constants import (
     MODEL_PROVIDER,
     MODEL_RESERVE_ENV,
     MODEL_TIMEOUT_ENV,
+    OPENROUTER_APP_TITLE,
+    OPENROUTER_APP_URL,
+    OPENROUTER_KEY_ENV,
+    OPENROUTER_MODEL_ENV,
     OUTPUT_RETRIES,
     PAYMENT_PIX,
     RETRY_PRICE,
@@ -46,7 +51,7 @@ from music_store_agent.constants import (
     SortOrder,
 )
 from music_store_agent.deps import Deps
-from music_store_agent.failover import model_chain, request_settings, shared_breaker
+from music_store_agent.failover import model_stack, request_settings, shared_breaker
 from music_store_agent.guard import AgentReply, grounding_gap
 from music_store_agent.handoff import HandoffCase, follow_up, reply_window, write_handoff
 from music_store_agent.hours import hours_answer, parse_asked_day
@@ -74,6 +79,29 @@ def fallback_model_id(raw: str | None = None) -> str:
 def reserve_model_id(raw: str | None = None) -> str:
     """Return the reserve Gemini id: a lite model that answers when the others are limited."""
     return _gemini_id(raw, MODEL_RESERVE_ENV, DEFAULT_RESERVE_MODEL)
+
+
+def openrouter_model_name(raw: str | None = None) -> str:
+    """The OpenRouter model slug, such as `anthropic/claude-haiku-5.5`."""
+    text = (raw if raw is not None else os.environ.get(OPENROUTER_MODEL_ENV, "")).strip()
+    return text or DEFAULT_OPENROUTER_MODEL
+
+
+def openrouter_configured() -> bool:
+    return bool(os.environ.get(OPENROUTER_KEY_ENV, "").strip())
+
+
+def _openrouter_model(name: str) -> Model:
+    """The OpenRouter model, sending the app's URL and title so the usage is attributed to it."""
+    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    provider = OpenRouterProvider(
+        api_key=os.environ[OPENROUTER_KEY_ENV].strip(),
+        app_url=OPENROUTER_APP_URL,
+        app_title=OPENROUTER_APP_TITLE,
+    )
+    return OpenRouterModel(name, provider=provider)
 
 
 def _gemini_id(raw: str | None, env: str, default: str) -> str:
@@ -121,22 +149,29 @@ def build_agent(
 ) -> Agent[Deps, AgentReply]:
     """A Model instance runs as given, with only the settings passed in.
 
-    An id, or nothing, runs that primary with the fallback and the reserve behind it, each
-    request under the hard deadline and the HTTP timeout.
+    Nothing runs OpenRouter first when its key is set, then the Gemini primary, fallback and
+    reserve. A Gemini id runs that primary with the fallback and the reserve behind it, without
+    OpenRouter. Each request runs under the hard deadline and the HTTP timeout.
     """
     if isinstance(model, Model):
         chosen: Model = model
     else:
-        primary, fallback, reserve = model_id(model), fallback_model_id(), reserve_model_id()
         seconds, window = request_timeout(), breaker_window()
-        chosen = model_chain(
-            primary,
-            fallback,
-            seconds,
-            shared_breaker(primary, window),
-            reserve,
-            (shared_breaker(fallback, window), None),
-        )
+        models: list[Model | str] = []
+        if model is None and openrouter_configured():
+            name = openrouter_model_name()
+            models.append(_openrouter_model(name))
+            ids = [f"openrouter:{name}"]
+        else:
+            ids = []
+        # With OpenRouter alone, no Gemini key is needed: the Gemini models join only with one.
+        if not (models and not os.environ.get("GOOGLE_API_KEY", "").strip()):
+            gemini = [model_id(model), fallback_model_id(), reserve_model_id()]
+            models += gemini
+            ids += gemini
+        # Every model but the last has a breaker, shared by every agent this process builds.
+        breakers = [shared_breaker(known, window) for known in ids[:-1]]
+        chosen = model_stack(models, seconds, breakers)
         settings = settings or request_settings(seconds)
     agent: Agent[Deps, AgentReply] = Agent(
         chosen,

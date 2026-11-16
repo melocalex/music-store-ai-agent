@@ -1,6 +1,6 @@
 # Architecture
 
-One Pydantic AI agent on Gemini with a fallback and a reserve model, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
+One Pydantic AI agent on Claude Haiku through OpenRouter, with three Gemini models behind it, ten typed tools, an in-memory SQLite copy of the CSVs, the curated manual, and a price check on every reply.
 
 ## Turn flow
 
@@ -10,13 +10,13 @@ sequenceDiagram
   actor C as Customer
   participant P as Page or CLI
   participant R as run_turn
-  participant A as Agent (primary, fallback, then reserve)
+  participant A as Agent (OpenRouter, then three Gemini models)
   participant T as Tools
   participant L as Ledger
   participant G as Price check
   C->>P: question
   P->>R: message, history, turn count
-  R->>R: session cap, input size, daily cap
+  R->>R: input size
   R->>A: run, within 45 seconds
   loop until a final reply
     A->>T: tool call with typed arguments
@@ -42,17 +42,18 @@ sequenceDiagram
 
 | Role | Variable | Default |
 |---|---|---|
+| First, when `OPENROUTER_API_KEY` is set | `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` |
 | Primary | `MODEL` | `google:gemini-3.8-flash` |
 | Fallback | `MODEL_FALLBACK` | `google:gemini-3.6-flash` |
 | Reserve | `MODEL_RESERVE` | `google:gemini-3.5-flash-lite` |
 
-Each model in the chain is a `GuardedModel` from `failover.py`. Its request runs in a task of its own under a hard deadline, 15 seconds by default (`MODEL_TIMEOUT_SECONDS`). At the deadline the task is cancelled and left behind, never awaited, and the wrapper raises `ModelRequestTimeout`, so a socket that ignores cancellation cannot hold the turn. The same value goes to the HTTP client as its timeout for each attempt, and provider SDK retries are set to 0. An outage or a limit sends that same request to the next model with a fresh deadline: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`, and a `ModelRateLimitError` or `ModelQuotaExceededError` for a 429. Any other error, such as a rejected request, is raised from the model that failed. When every model fails, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` reads its causes: the rate-limit message if all were limits, the quota message if all spent their day, otherwise the provider message.
+Each model in the chain is a `GuardedModel` from `failover.py`. Its request runs in a task of its own under a hard deadline, 10 seconds by default (`MODEL_TIMEOUT_SECONDS`). At the deadline the task is cancelled and left behind, never awaited, and the wrapper raises `ModelRequestTimeout`, so a socket that ignores cancellation cannot hold the turn. The same value goes to the HTTP client as its timeout for each attempt, and provider SDK retries are set to 0. An outage or a limit sends that same request to the next model with a fresh deadline: `ModelUnavailableError` for a 503, `ModelServerError` for another 5xx, `ModelConnectionError`, or `ModelRequestTimeout`, and a `ModelRateLimitError` or `ModelQuotaExceededError` for a 429, which is also what OpenRouter's 402 out-of-credit maps to. Any other error, such as a rejected request, is raised from the model that failed. When every model fails, `FallbackModel` raises a `FallbackExceptionGroup`, and `run_turn` reads its causes: the rate-limit message if all were limits, the quota message if all spent their day, otherwise the provider message.
 
-`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`), and the live eval runner uses the same one. Three 15-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
+`run_turn` gives the whole run a 45-second deadline (`TURN_TIMEOUT_SECONDS`), and the live eval runner uses the same one. Four 10-second attempts fit inside it, and tool rounds and price-check retries cannot stack past it. The timeout is checked at startup against that budget.
 
 ### Circuit breaker
 
-The primary's and the fallback's `GuardedModel` each hold a `CircuitBreaker`, shared by every agent the process builds for that model id. A failure records its time. For `MODEL_BREAKER_SECONDS` after an outage, 300 by default, one minute after a rate limit, and one hour after a daily quota, that model refuses each request at once with `PrimaryBreakerOpen`, a `ModelUnavailableError`, so `FallbackModel` moves straight to the next one, which gets the full deadline. The first request after the window calls the model again: a success closes the breaker, and a failure starts a new window. Rejected requests leave it alone. The breaker is in memory and per process, behind a lock, since Streamlit runs each session on its own thread.
+Every `GuardedModel` but the last holds a `CircuitBreaker`, shared by every agent the process builds for that model id. A failure records its time. For `MODEL_BREAKER_SECONDS` after an outage, 300 by default, one minute after a rate limit, and one hour after a daily quota, that model refuses each request at once with `PrimaryBreakerOpen`, a `ModelUnavailableError`, so `FallbackModel` moves straight to the next one, which gets the full deadline. The first request after the window calls the model again: a success closes the breaker, and a failure starts a new window. Rejected requests leave it alone. The breaker is in memory and per process, behind a lock, since Streamlit runs each session on its own thread.
 
 The choice is made per request, not per conversation, so a turn can mix responses from both models. After each turn, `run_turn` logs the model behind each response: info for the primary, and a warning for any other model that says whether the earlier ones failed, with their error types, or were skipped by an open breaker. `failover.py` logs a warning when the breaker opens and on each skip, and an info line when it closes. The log holds model ids and error types only.
 
@@ -85,7 +86,7 @@ Pydantic turns the `Literal` arguments into enums in the tool schema, so a value
 |---|---|
 | `agent.py` | the agent, the model id, timeout, and breaker-window checks, the tool wrappers, and the output validator |
 | `failover.py` | the model chain: the outage list, the hard deadline, the circuit breaker, and the request settings |
-| `run.py` | one turn: caps, the turn deadline, the run, the failure messages, and the answering-model log |
+| `run.py` | one turn: input size, the turn deadline, the run, the failure messages, and the answering-model log |
 | `catalog.py` | product states, search, code matching, product text, promotions |
 | `quotes.py`, `money.py` | the offer text and the `Decimal` rules for PIX, installments, freight, and quantity |
 | `guard.py`, `ledger.py` | the price check and the record of what tools returned |
@@ -95,7 +96,7 @@ Pydantic turns the `Literal` arguments into enums in the tool schema, so a value
 | `prompts.py` | conduct: tone, quoting rules, when to hand off |
 | `handoff.py`, `usage.py` | the two local writes |
 | `quality.py` | the data-quality report |
-| `constants.py` | every money, policy, and cap value |
+| `constants.py` | every money, policy, and limit value |
 
 ## Data
 
@@ -125,4 +126,4 @@ Each rejection counts as a firing, retries included. A turn counts once as a tru
 
 ## Local writes
 
-`var/handoffs.jsonl` gets a row from `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback. A row carries the store-clock time, the real time it was written, the conversation's protocol, and the confirmed customer and order ids when known. `var/daily_turns.json` holds the daily counter, written under a lock with `os.replace`. Both are gitignored, and neither holds an email or a phone.
+`var/handoffs.jsonl` gets a row from `handoff_to_human`, a verification lockout, an after-sales request, and the price-check fallback. A row carries the store-clock time, the real time it was written, the conversation's protocol, and the confirmed customer and order ids when known. It is gitignored and holds no email or phone.
