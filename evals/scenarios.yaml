@@ -13,8 +13,9 @@
       expect:
         tools: [{tool: search_catalog, args: {max_price: "1000"}}]
         tool_text: {contains: ["de 12."], excludes: ["Giannini GF-3D", "Shelby SN-7C"]}
-        amounts: {present: ["429.90"], absent: ["799.90", "749.00"]}
+        amounts: {present: ["429.90"], absent: ["799.90"]}
         reply_any: ["12"]
+        reply_none: ["Giannini GF-3D", "Shelby SN-7C"]
 
 - id: c40-price
   turns:
@@ -173,7 +174,7 @@
           - {tool: quote_offer, args: {query: "C40", payment: pix, destination: other}}
         reply: Para São Paulo eu não calculo o frete aqui. A equipe passa a cotação.
       expect:
-        tools: [{tool: quote_offer, args: {query: "C40", destination: other}}]
+        tools: [{tool: quote_offer, args: {query: {any_of: ["C40", "81"]}, destination: other}}]
         tool_text: {contains: ["não é calculado"]}
         amounts: {absent: ["35.00"]}
         reply_any: ["não calcul", "cotação", "não consigo calcular"]

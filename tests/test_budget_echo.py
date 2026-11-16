@@ -238,3 +238,43 @@ def test_a_message_that_is_too_long_is_refused_in_the_customers_language(tmp_pat
     long_english = "Do you have guitars? " + "x" * MAX_INPUT_CHARS
     turn, _deps_used = _run(tmp_path, _says("unused"), long_english)
     assert turn.message == ENGLISH_MESSAGES[INPUT_TOO_LONG_MESSAGE]
+
+
+def test_a_null_id_on_the_named_products_own_amount_passes() -> None:
+    """The first parcel of R$ 100,00 is also the floor, so the model may quote it without an id."""
+    ledger = Ledger()
+    ledger.add_product(81, Decimal("99.98"), "Yamaha C40 Nylon Natural")
+    ledger.add_product(81, Decimal("100.00"), "Yamaha C40 Nylon Natural")
+    ledger.add_policy(Decimal("100.00"), "floor")
+    quotes = [
+        PriceQuote(amount=Decimal("100.00")),
+        PriceQuote(product_id=81, amount=Decimal("99.98")),
+    ]
+    text = "Em 6x, o Yamaha C40 fica com a primeira parcela de R$ 100,00 e cinco de R$ 99,98."
+    assert grounding_gap(text, quotes, ledger).ok
+    # A null id does not make another product's amount, or an invented one, pass.
+    ledger.add_product(82, Decimal("849.00"), "Yamaha C70 Nylon Natural")
+    swapped = [PriceQuote(amount=Decimal("849.00"))]
+    assert not grounding_gap("O Yamaha C40 custa R$ 849,00.", swapped, ledger).ok
+    invented = [PriceQuote(amount=Decimal("10.00"))]
+    assert not grounding_gap("O Yamaha C40 custa R$ 10,00.", invented, ledger).ok
+
+
+def test_a_model_code_made_only_of_letters_names_its_product() -> None:
+    from music_store_agent.textutil import code_tokens
+
+    assert code_tokens("Kala KA-SRT-CTG Tenor Elétrico Cedar") == {"kasrtctg"}
+    assert code_tokens("Kala KA-SMHCE Concert Elétrico Mogno") == {"kasmhce"}
+    assert code_tokens("Kala KA-T Tenor Mogno") == set()
+    ledger = Ledger()
+    ledger.add_product(126, Decimal("1599.00"), "Kala KA-SRT-CTG Tenor Elétrico Cedar")
+    ledger.add_product(125, Decimal("1299.00"), "Ohana TK-35G Tenor Sólido Natural")
+    names = {126: "Kala KA-SRT-CTG Tenor Elétrico Cedar", 125: "Ohana TK-35G Tenor Sólido Natural"}
+    quotes = [
+        PriceQuote(product_id=126, amount=Decimal("1599.00")),
+        PriceQuote(product_id=125, amount=Decimal("1299.00")),
+    ]
+    text = "Temos o Kala KA-SRT-CTG por R$ 1.599,00 ou o Ohana TK-35G por R$ 1.299,00."
+    assert grounding_gap(text, quotes, ledger, names).ok
+    swapped = "Temos o Kala KA-SRT-CTG por R$ 1.299,00 ou o Ohana TK-35G por R$ 1.599,00."
+    assert not grounding_gap(swapped, quotes, ledger, names).ok

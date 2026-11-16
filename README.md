@@ -152,7 +152,7 @@ music-store-ai-agent/
 
 | Situation | What happens |
 |---|---|
-| A reply repeats a number the customer typed, such as a budget of R$ 1.000,00, or lists a dozen prices in one sentence | The check can refuse an honest reply. After two retries the customer gets the short message and the team gets a handoff. In the live eval, the budget question fails 3 runs of 3 for this reason |
+| A reply repeats a number the customer typed | A limit the customer wrote ("até R$ 1.500", "under R$ 1,500") may be repeated, but only as a limit, in a sentence that says so. Any other typed amount, such as "vi por R$ 10,00", still cannot appear. A reply that words the limit in an unusual way can still be refused. After two retries the customer gets a short handoff message in their own language |
 | A model answers a follow-up turn from the conversation and puts the amounts in the wrong quote | Same path as above. The live eval shows it in the 6x installment follow-up on some runs |
 | A reply puts a price in a sentence that names a different product | The check rejects it. After two retries the customer gets a short message and the team gets a handoff |
 | A product is named only by brand, as in "o Takamine" | The sentence check cannot tie the amount to a model, so it relies on the quote's product id |

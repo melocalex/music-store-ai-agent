@@ -177,6 +177,8 @@ def _crossed(
                 continue
             if None in ids and _names_kind(sentence, ledger.rule_kinds(amount)):
                 continue
+            if None in ids and any(ledger.product_has(pid, amount) for pid in named):
+                continue  # a null id on an amount that is also the named product's own value
             products = sorted(i for i in ids if i is not None)
             crossed.append(_label(products[0] if products else None, amount))
     return crossed

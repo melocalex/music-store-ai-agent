@@ -177,10 +177,10 @@ def test_a_rule_value_cannot_pose_as_a_product_price() -> None:
     assert not grounding_gap("O Shelby SU-21S custa R$ 35,00.", freight, ledger, names).ok
     good = "O frete do Shelby SU-21S em Campo Grande é R$ 35,00."
     assert grounding_gap(good, freight, ledger, names).ok
-    ledger.add_policy(Decimal("159.90"), ORDER_TOTAL)
-    total = [PriceQuote(amount=Decimal("159.90"))]
-    assert not grounding_gap("O Shelby SU-21S custa R$ 159,90.", total, ledger, names).ok
-    order = "O pedido 7, com 1x Shelby SU-21S, tem total gravado de R$ 159,90."
+    ledger.add_policy(Decimal("319.80"), ORDER_TOTAL)
+    total = [PriceQuote(amount=Decimal("319.80"))]
+    assert not grounding_gap("O Shelby SU-21S custa R$ 319,80.", total, ledger, names).ok
+    order = "O pedido 7, com 2x Shelby SU-21S, tem total gravado de R$ 319,80."
     assert grounding_gap(order, total, ledger, names).ok
 
 

@@ -368,6 +368,8 @@ def code_tokens(text: str) -> set[str]:
             continue
         if re.search(r"[a-z]", compact) and re.search(r"\d", compact):
             found.add(compact)
+        elif "-" in token and re.fullmatch(r"[a-z]{6,}", compact):
+            found.add(compact)  # a code of letters only, such as KA-SRT-CTG
     parts = re.findall(r"[a-z0-9]+", folded)
     for left, right in zip(parts, parts[1:], strict=False):
         if re.fullmatch(r"[a-z]+", left) and (right.isdigit() or _PARCEL_COUNT.fullmatch(right)):

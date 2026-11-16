@@ -108,12 +108,12 @@ Each tool records what it printed:
 
 - A price, a PIX value, a line total, or an installment goes under its product id, with the product name.
 - A rule value goes in the rule map with its kind: freight, a floor, a threshold, a stored order total. An amount from a manual section takes the kind of the constant it equals.
-- The budget the customer gave, as the search echoes it, goes in a set of its own.
+- The budget the customer gave, as the search echoes it, goes in a set of its own. The validator also adds the upper bounds written in the customer's current message (`budget_caps` in `textutil.py`).
 - Every percent printed by a catalog, quote, promotion, or policy tool goes in the percent set.
 
 The final reply carries `message` and `quotes`, a list of `(product_id, amount)` pairs. The validator in `agent.py` calls `grounding_gap` in `guard.py`, which rejects the reply when:
 
-1. an amount in the message is not in `quotes`;
+1. an amount in the message is not in `quotes`, unless it is a limit the customer's current message states and the reply words it as a limit;
 2. a quote with a product id is not in that product's bucket, or a quote with a null id is neither a rule value nor the budget;
 3. a sentence names catalog products and carries an amount quoted for none of them, unless the amount is a null-id value and the sentence has a word of its kind;
 4. a percent in the message never appeared in tool text.
